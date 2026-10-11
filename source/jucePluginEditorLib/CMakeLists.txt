@@ -4,6 +4,7 @@ project(jucePluginEditorLib VERSION ${CMAKE_PROJECT_VERSION})
 set(SOURCES
 	focusedParameter.cpp focusedParameter.h
 	focusedParameterTooltip.cpp focusedParameterTooltip.h
+	hostWindowOwner.cpp hostWindowOwner.h
 	lcd.cpp lcd.h
 	led.cpp led.h
 	midiPorts.cpp midiPorts.h
@@ -65,6 +66,9 @@ set(SOURCES_PM_RML
 add_library(jucePluginEditorLib STATIC)
 
 target_sources(jucePluginEditorLib PRIVATE ${SOURCES} ${SOURCES_PM} ${SOURCES_PM_RML})
+if(APPLE)
+	target_sources(jucePluginEditorLib PRIVATE hostWindowOwner_mac.mm)
+endif()
 source_group("source" FILES ${SOURCES})
 source_group("source\\patchmanager" FILES ${SOURCES_PM})
 source_group("source\\patchmanagerUiRml" FILES ${SOURCES_PM_RML})

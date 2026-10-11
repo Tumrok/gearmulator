@@ -2,6 +2,7 @@
 
 #include "pluginEditor.h"
 #include "pluginEditorState.h"
+#include "hostWindowOwner.h"
 
 #include "dsp56kBase/logging.h"
 
@@ -104,6 +105,25 @@ int EditorWindow::getControlParameterIndex(Component& _component)
 	}
 
 	return AudioProcessorEditor::getControlParameterIndex(_component);
+}
+
+void EditorWindow::parentHierarchyChanged()
+{
+	AudioProcessorEditor::parentHierarchyChanged();
+	keepOnTop(20);
+}
+
+void EditorWindow::keepOnTop(const int _retries)
+{
+	if (keepHostWindowOnTop(*this) || _retries <= 0)
+		return;
+
+	// not on a native window yet
+	juce::Timer::callAfterDelay(100, [safe = juce::Component::SafePointer(this), _retries]
+	{
+		if (safe)
+			safe->keepOnTop(_retries - 1);
+	});
 }
 
 void EditorWindow::setGuiScale(const float _percent)
