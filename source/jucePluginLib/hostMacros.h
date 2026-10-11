@@ -60,11 +60,38 @@ namespace pluginLib
 			std::atomic<float> m_value{0.0f};
 		};
 
+		// Layer for the mouse / automation: 16 steps over the whole range
+		class LayerParam final : public juce::AudioProcessorParameterWithID
+		{
+		public:
+			explicit LayerParam(HostMacros& _owner);
+
+			static float toValue(const int _layer) { return static_cast<float>(_layer - 1) / static_cast<float>(LayerCount - 1); }
+			static int toLayer(float _value);
+
+			float getValue() const override { return m_value.load(); }
+			void setValue(float _newValue) override;
+			void setSilently(int _layer) { m_value.store(toValue(_layer)); }	// not reported to the host
+			float getDefaultValue() const override { return 0.0f; }
+			int getNumSteps() const override { return LayerCount; }
+			bool isDiscrete() const override { return true; }
+			juce::String getText(float _normalisedValue, int) const override { return juce::String(toLayer(_normalisedValue)); }
+			float getValueForText(const juce::String& _text) const override { return toValue(_text.getIntValue()); }
+
+		private:
+			HostMacros& m_owner;
+			std::atomic<float> m_value{0.0f};
+		};
+
+		// MIDI CC that selects the layer from a clip (MIDI Ctrl envelope): value 1..16 = layer.
+		// Free in the Virus CC map; consumed, it never reaches the synth.
+		static constexpr uint8_t LayerCC = 3;
+
 		explicit HostMacros(Processor& _processor);	// adds the parameters to the processor
 		~HostMacros() override;
 
-		// audio thread, host MIDI before it reaches the device
-		void remapMidi(synthLib::SMidiEvent& _ev);
+		// audio thread, host MIDI before it reaches the device. false = consumed (Layer CC)
+		bool remapMidi(synthLib::SMidiEvent& _ev);
 
 		void saveChunkData(baseLib::BinaryStream& _s) const;
 		void loadChunkData(baseLib::ChunkReader& _cr);
@@ -76,7 +103,11 @@ namespace pluginLib
 		std::string getCustomName(int _layer, int _knob) const;
 		void setCustomName(int _layer, int _knob, const std::string& _name);
 		juce::String getKnobName(int _knob) const;	// as the host shows it (current layer)
-		void announceToHost();	// touch every knob + Layer, in order (for Live's plugin "Configure")
+		void announceToHost();	// touch every knob, in order (for Live's plugin "Configure")
+		void setLayer(int _layer);	// UI: not reported to the host (would switch off Layer automation)
+		juce::String getValueText(int _knob) const;	// current layer
+		std::string getTargetDisplayName(int _layer, int _knob) const;
+		uint32_t getRevision() const { return m_revision.load(); }	// changes with layout / names / layer
 
 	private:
 		void timerCallback() override;
@@ -89,19 +120,22 @@ namespace pluginLib
 
 		Processor& m_processor;
 		std::array<Knob*, KnobCount> m_knobs{};
-		juce::AudioParameterInt* m_layerParam = nullptr;
+		LayerParam* m_layerParam = nullptr;
 
 		mutable std::mutex m_mutex;	// guards the layout and names below
 		std::array<std::array<std::string, KnobCount>, LayerCount> m_targets;
 		std::array<std::array<std::string, KnobCount>, LayerCount> m_customNames;
 		std::array<juce::String, KnobCount> m_knobNames;	// current layer, as shown to the host
+		std::array<juce::String, KnobCount> m_reportedNames;	// names the host was last told about
 
 		std::array<std::atomic<Parameter*>, KnobCount> m_active{};	// targets of the current layer
 		int m_appliedLayer = 0;	// message thread
 		std::atomic<bool> m_resolveRequest{true};
-		std::atomic<int> m_storedLayer{0};	// from a loaded state, applied by the timer
+		std::atomic<int> m_layer{1};	// current layer: last of Layer parameter / Layer CC / UI
 
 		std::array<uint8_t, 128> m_noteChannel{};	// audio thread: channel of each held note, 0xff = none
 		int m_announceStep = -1;
+		int m_settleTicks = 0;	// countdown to the name / editor update after a Layer change
+		std::atomic<uint32_t> m_revision{0};
 	};
 }

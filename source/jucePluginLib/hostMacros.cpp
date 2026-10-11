@@ -179,6 +179,25 @@ namespace pluginLib
 		t_pushing = false;
 	}
 
+	// ---- Layer ------------------------------------------------------------------------
+
+	HostMacros::LayerParam::LayerParam(HostMacros& _owner)
+		: AudioProcessorParameterWithID(juce::ParameterID("hmLayer", 1), "Layer")
+		, m_owner(_owner)
+	{
+	}
+
+	int HostMacros::LayerParam::toLayer(const float _value)
+	{
+		return juce::jlimit(1, LayerCount, 1 + static_cast<int>(std::lround(_value * static_cast<float>(LayerCount - 1))));
+	}
+
+	void HostMacros::LayerParam::setValue(const float _newValue)
+	{
+		m_value.store(_newValue);
+		m_owner.m_layer.store(toLayer(_newValue));
+	}
+
 	// ---- HostMacros -------------------------------------------------------------------
 
 	HostMacros::HostMacros(Processor& _processor) : m_processor(_processor)
@@ -191,7 +210,7 @@ namespace pluginLib
 			_processor.addParameter(k);	// owned by the processor
 		}
 
-		m_layerParam = new juce::AudioParameterInt(juce::ParameterID("hmLayer", 1), "Layer", 1, LayerCount, 1);
+		m_layerParam = new LayerParam(*this);
 		_processor.addParameter(m_layerParam);
 
 		m_noteChannel.fill(0xff);
@@ -204,17 +223,24 @@ namespace pluginLib
 		stopTimer();
 	}
 
-	void HostMacros::remapMidi(synthLib::SMidiEvent& _ev)
+	bool HostMacros::remapMidi(synthLib::SMidiEvent& _ev)
 	{
 		if (!_ev.sysex.empty())
-			return;
+			return true;
 
 		const auto status = _ev.a;
 		if (status < 0x80 || status >= 0xf0)
-			return;
+			return true;
 
-		auto ch = static_cast<uint8_t>(m_layerParam->get() - 1);
 		const auto type = static_cast<uint8_t>(status & 0xf0);
+
+		if (type == 0xb0 && _ev.b == LayerCC)
+		{
+			m_layer.store(juce::jlimit(1, LayerCount, static_cast<int>(_ev.c)));
+			return false;
+		}
+
+		auto ch = static_cast<uint8_t>(m_layer.load() - 1);
 		const auto note = static_cast<uint8_t>(_ev.b & 0x7f);
 
 		if (type == 0x90 && _ev.c > 0)
@@ -230,6 +256,7 @@ namespace pluginLib
 		}
 
 		_ev.a = static_cast<uint8_t>(type | ch);
+		return true;
 	}
 
 	void HostMacros::saveChunkData(baseLib::BinaryStream& _s) const
@@ -238,7 +265,7 @@ namespace pluginLib
 
 		std::lock_guard lock(m_mutex);
 
-		_s.write(static_cast<uint32_t>(m_layerParam->get()));
+		_s.write(static_cast<uint32_t>(m_layer.load()));
 
 		for (int l = 0; l < LayerCount; ++l)
 		{
@@ -268,14 +295,17 @@ namespace pluginLib
 				}
 			}
 			if (layer >= 1 && layer <= LayerCount)
-				m_storedLayer.store(static_cast<int>(layer));
+			{
+				m_layer.store(static_cast<int>(layer));
+				m_layerParam->setSilently(static_cast<int>(layer));
+			}
 			m_resolveRequest = true;
 		});
 	}
 
 	int HostMacros::getLayer() const
 	{
-		return m_layerParam->get();
+		return m_layer.load();
 	}
 
 	std::string HostMacros::getTarget(const int _layer, const int _knob) const
@@ -348,6 +378,32 @@ namespace pluginLib
 			p->setValue(_value);	// same path as host automation of the parameter itself
 	}
 
+	void HostMacros::setLayer(const int _layer)
+	{
+		if (_layer < 1 || _layer > LayerCount)
+			return;
+		m_layer.store(_layer);
+		m_layerParam->setSilently(_layer);
+		timerCallback();
+	}
+
+	juce::String HostMacros::getValueText(const int _knob) const
+	{
+		if (_knob < 0 || _knob >= KnobCount)
+			return {};
+		return getKnobText(_knob, m_knobs[static_cast<size_t>(_knob)]->getValue(), 0);
+	}
+
+	std::string HostMacros::getTargetDisplayName(const int _layer, const int _knob) const
+	{
+		const auto name = getTarget(_layer, _knob);
+		if (name.empty() || !m_processor.hasController())
+			return name;
+		if (const auto* p = m_processor.getController().getParameter(name, static_cast<uint8_t>(_layer - 1)))
+			return p->getDescription().displayName;
+		return name;
+	}
+
 	void HostMacros::announceToHost()
 	{
 		m_announceStep = 0;
@@ -358,32 +414,42 @@ namespace pluginLib
 		if (!m_processor.hasController())
 			return;
 
-		const auto stored = m_storedLayer.exchange(0);
-		if (stored > 0)
-			m_layerParam->setValueNotifyingHost(m_layerParam->convertTo0to1(static_cast<float>(stored)));
+		const auto layer = m_layer.load();
 
-		const auto layer = m_layerParam->get();
-
-		if (layer != m_appliedLayer || m_resolveRequest)
+		if (m_resolveRequest)
+		{
 			applyLayer(layer);
+		}
+		else if (layer != m_appliedLayer)
+		{
+			// switch knobs + values right away; names (Live re-reads ALL parameters on a
+			// title change) and the editor part only once Layer stops moving
+			m_appliedLayer = layer;
+			resolveTargets();
+			++m_revision;
+			syncKnobsFromTargets(true);
+			m_settleTicks = 9;	// ~300 ms
+		}
 		else
+		{
 			syncKnobsFromTargets(false);
+		}
 
-		// for Live's "Configure": touch the knobs one by one, then Layer
+		if (m_settleTicks > 0 && --m_settleTicks == 0)
+		{
+			namesChanged();
+			m_processor.onHostSelectPart(static_cast<uint8_t>(m_appliedLayer - 1));
+		}
+
+		// for Live's "Configure": touch the knobs one by one
 		if (m_announceStep >= 0)
 		{
-			juce::AudioProcessorParameter* p = m_announceStep < KnobCount
-				? static_cast<juce::AudioProcessorParameter*>(m_knobs[static_cast<size_t>(m_announceStep)])
-				: m_layerParam;
+			auto* knob = m_knobs[static_cast<size_t>(m_announceStep)];
+			knob->beginChangeGesture();
+			knob->setFromTarget(knob->getValue());
+			knob->endChangeGesture();
 
-			p->beginChangeGesture();
-			if (m_announceStep < KnobCount)
-				m_knobs[static_cast<size_t>(m_announceStep)]->setFromTarget(p->getValue());
-			else
-				p->setValueNotifyingHost(p->getValue());
-			p->endChangeGesture();
-
-			if (++m_announceStep > KnobCount)
+			if (++m_announceStep >= KnobCount)
 				m_announceStep = -1;
 		}
 	}
@@ -396,6 +462,7 @@ namespace pluginLib
 
 		resolveTargets();
 		namesChanged();
+		++m_revision;
 		syncKnobsFromTargets(true);
 
 		if (layerChanged)
@@ -427,6 +494,12 @@ namespace pluginLib
 
 	void HostMacros::namesChanged()
 	{
+		{
+			std::lock_guard lock(m_mutex);
+			if (m_reportedNames == m_knobNames)
+				return;
+			m_reportedNames = m_knobNames;
+		}
 		m_processor.updateHostDisplay(juce::AudioProcessor::ChangeDetails().withParameterInfoChanged(true));
 	}
 

@@ -1,0 +1,57 @@
+.pushknobs-layers {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3em;
+}
+
+.pushknobs-layer {
+	width: 2.4em;
+	padding: 0.4em 0;
+}
+
+.pushknobs-layer:checked, .pushknobs-layer:checked:hover, .button.pushknobs-layer:checked {
+	background-color: rgb(40,140,190);
+	color: #fff;
+}
+
+.button.pushknobs-layer:checked:hover {
+	background-color: rgb(30,112,155);
+}
+
+.button.pushknobs-layer:checked:active {
+	background-color: rgb(25,95,130);
+}
+
+.pushknobs-tr-headline {
+	font-style: italic;
+	background-color: #0003;
+}
+
+.pushknobs-tr {
+	height: 2.2em;
+	vertical-align: middle;
+}
+
+.pushknobs-tr td {
+	padding-left: 0.6em;
+	padding-right: 0.6em;
+	vertical-align: middle;
+}
+
+.pushknobs-tr:empty {
+	color: #fff6;
+}
+
+.pushknobs-name {
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.pushknobs-clear {
+	padding: 0.2em 0.6em;
+}
+
+.pushknobs-hint {
+	color: #fffa;
+	font-style: italic;
+}
