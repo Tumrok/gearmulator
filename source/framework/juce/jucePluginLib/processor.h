@@ -339,6 +339,46 @@ namespace pluginLib
 		float m_preferredDeviceSamplerate = 0.0f;
 		synthLib::Resampler::Mode m_resamplerMode = synthLib::Resampler::Mode::MameHq;
 		float m_hostSamplerate = 0.0f;
+
+		// OsTIrus_mod: a state restored before the audio runs is lost — prepareToPlay()
+		// and the start of processing reconfigure / boot the emulated device. Hosts
+		// like Max vst~ restore state that early, so it is kept and applied from a
+		// timer (message thread) shortly after the first processed block. Every step
+		// is written to <data folder>/state_debug.log.
+		struct StateTimer : juce::Timer
+		{
+			std::function<void()> onTick;
+			void timerCallback() override { if (onTick) onTick(); }
+		};
+		std::atomic<bool> m_prepared{false};
+		std::atomic<bool> m_audioRunning{false};
+		std::vector<uint8_t> m_pendingState;
+		int m_pendingTicks = 0;
+		bool m_loggedAudio = false;
+		StateTimer m_stateTimer;
+		// OsTIrus_mod: per-instance state files. Max vst~ stores the plug state in the
+		// Live set but never hands it back (no setState on reopen / duplicate), so the
+		// hosting device binds this instance to an id via a private SysEx
+		// (F0 7D 4F 4D 01 <load id: 5 x 7 bit> <save id: 5 x 7 bit> F7): the state of
+		// <load id> is loaded, and from then on every state query writes
+		// <data folder>/instances/<save id>.state.
+		std::atomic<uint32_t> m_bindLoadId{0};
+		std::atomic<uint32_t> m_bindSaveId{0};
+		std::atomic<bool> m_bindRequest{false};
+		// OsTIrus_mod: select the editor part from the host (F0 7D 4F 4D 02 <part 0..15> F7)
+		std::atomic<int> m_selectPartRequest{-1};
+	public:
+		// OsTIrus_mod: select a part on behalf of the host; an editor-aware subclass
+		// routes it through the open editor (part buttons, patch manager, controls)
+		virtual void onHostSelectPart(uint8_t _part);
+	private:
+		uint32_t m_instanceId = 0;
+		juce::File instanceFile(uint32_t _id) const;
+		void handleBindRequest();
+		bool filterBindSysex(juce::MidiBuffer& _midi);
+		void stateLog(const juce::String& _msg) const;
+		void deferState(const void* _data, size_t _size, const char* _origin);
+		void onStateTimer();
 		MidiPorts m_midiPorts;
 		SkinVariables m_skinVariables;
 		MidiNotifier m_midiNotifier;

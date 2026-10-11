@@ -59,10 +59,16 @@ namespace pluginLib
 		synthLib::RomLoader::addSearchPath(getPublicRomFolder());
 		synthLib::RomLoader::addSearchPath(synthLib::getModulePath(true));
 		synthLib::RomLoader::addSearchPath(synthLib::getModulePath(false));
+
+		// OsTIrus_mod: message-thread timer for deferred state + instance binding
+		m_stateTimer.onTick = [this] { onStateTimer(); };
+		m_stateTimer.startTimer(100);
 	}
 
 	Processor::~Processor()
 	{
+		m_stateTimer.stopTimer();
+		m_stateTimer.onTick = nullptr;
 		shutdown();
 		destroyController();
 		m_plugin.reset();
@@ -778,6 +784,17 @@ namespace pluginLib
 		// initialisation that you need
 		m_hostSamplerate = static_cast<float>(sampleRate);
 
+		// OsTIrus_mod: the device reconfiguration below resets the emulated synth,
+		// so keep the current state across a repeated prepareToPlay()
+		juce::MemoryBlock keepState;
+		const bool wasPrepared = m_prepared.load();
+#if !SYNTHLIB_DEMO_MODE
+		if (wasPrepared && m_pendingState.empty())
+			getStateInformation(keepState);
+#endif
+		stateLog("prepareToPlay sr=" + juce::String(sampleRate) + " block=" + juce::String(samplesPerBlock)
+			+ " again=" + juce::String(wasPrepared ? 1 : 0) + " pending=" + juce::String(m_pendingState.size()));
+
 		getPlugin().setHostSamplerate(static_cast<float>(sampleRate), m_preferredDeviceSamplerate);
 		getPlugin().setBlockSize(samplesPerBlock);
 
@@ -793,6 +810,17 @@ namespace pluginLib
 			m_captureBuffer.setSize(g_captureChannels, static_cast<int>(captureMaxSeconds * sampleRate), false, true, true);
 			m_captureBuffer.clear();
 		}
+
+		// OsTIrus_mod: a repeated prepare resets the synth too — put the kept state back
+		// (a pending early state is applied by the timer once audio runs)
+		m_prepared = true;
+#if !SYNTHLIB_DEMO_MODE
+		if (wasPrepared && keepState.getSize() > 0)
+		{
+			stateLog("prepareToPlay: restoring kept state " + juce::String(static_cast<int>(keepState.getSize())));
+			setState(keepState.getData(), keepState.getSize());
+		}
+#endif
 	}
 
 	void Processor::releaseResources()
@@ -818,11 +846,143 @@ namespace pluginLib
 	}
 
 	//==============================================================================
+	// OsTIrus_mod: deferred state restore + log
+
+	static juce::String stateFingerprint(const void* _data, const size_t _size)
+	{
+		const auto* b = static_cast<const uint8_t*>(_data);
+		uint32_t h = 2166136261u;   // FNV-1a
+		for (size_t i = 0; i < _size; ++i) { h ^= b[i]; h *= 16777619u; }
+		return " hash=" + juce::String::toHexString(static_cast<int>(h)) + " head=" + juce::String::toHexString(b, static_cast<int>(std::min<size_t>(_size, 24)), 0);
+	}
+
+	void Processor::stateLog(const juce::String& _msg) const
+	{
+		const juce::File file(juce::String(getDataFolder()) + "state_debug.log");
+		file.appendText(juce::Time::getCurrentTime().formatted("%H:%M:%S.")
+			+ juce::String(juce::Time::getMillisecondCounter() % 1000).paddedLeft('0', 3)
+			+ " [" + juce::String::toHexString(reinterpret_cast<juce::pointer_sized_int>(this)) + "] " + _msg + "\n");
+	}
+
+	void Processor::deferState(const void* _data, const size_t _size, const char* _origin)
+	{
+		const auto* bytes = static_cast<const uint8_t*>(_data);
+		m_pendingState.assign(bytes, bytes + _size);
+		m_pendingTicks = 0;
+		stateLog(juce::String(_origin) + ": deferred " + juce::String(_size) + " until audio runs");
+	}
+
+	void Processor::onStateTimer()
+	{
+		if (m_bindRequest.exchange(false))
+			handleBindRequest();
+		const int part = m_selectPartRequest.exchange(-1);
+		if (part >= 0)
+		{
+			stateLog("select part " + juce::String(part + 1));
+			onHostSelectPart(static_cast<uint8_t>(part));   // like clicking the part in the editor
+		}
+		if (m_pendingState.empty())
+			return;
+		if (!m_audioRunning)
+			return;
+		if (!m_loggedAudio) { m_loggedAudio = true; stateLog("audio running"); }
+		if (++m_pendingTicks < 3)   // let the emulator settle for ~0.3 s
+			return;
+		const auto pending = std::move(m_pendingState);
+		m_pendingState.clear();
+		stateLog("applying deferred state " + juce::String(pending.size()));
+		setState(pending.data(), pending.size());
+		stateLog("applied");
+	}
+
+	void Processor::onHostSelectPart(const uint8_t _part)
+	{
+		getController().setCurrentPart(_part);
+	}
+
+	juce::File Processor::instanceFile(const uint32_t _id) const
+	{
+		return juce::File(juce::String(getDataFolder())).getChildFile("instances").getChildFile(juce::String(_id) + ".state");
+	}
+
+	bool Processor::filterBindSysex(juce::MidiBuffer& _midi)
+	{
+		// audio thread: only scan; the rare match is handled on the message thread
+		bool found = false;
+		for (const auto m : _midi)
+		{
+			const auto* d = m.data;
+			if (m.numBytes == 16 && d[0] == 0xf0 && d[1] == 0x7d && d[2] == 0x4f && d[3] == 0x4d && d[4] == 0x01 && d[15] == 0xf7)
+			{
+				uint32_t load = 0, save = 0;
+				for (int i = 0; i < 5; ++i) load |= static_cast<uint32_t>(d[5 + i] & 0x7f) << (7 * i);
+				for (int i = 0; i < 5; ++i) save |= static_cast<uint32_t>(d[10 + i] & 0x7f) << (7 * i);
+				m_bindLoadId = load;
+				m_bindSaveId = save;
+				m_bindRequest = true;
+				found = true;
+			}
+			else if (m.numBytes == 7 && d[0] == 0xf0 && d[1] == 0x7d && d[2] == 0x4f && d[3] == 0x4d && d[4] == 0x02 && d[6] == 0xf7)
+			{
+				m_selectPartRequest = d[5] & 0x0f;
+				found = true;
+			}
+		}
+		if (!found)
+			return false;
+		juce::MidiBuffer rest;   // keep the private message away from the synth
+		for (const auto m : _midi)
+			if (!(m.numBytes == 16 && m.data[0] == 0xf0 && m.data[1] == 0x7d && m.data[2] == 0x4f && m.data[3] == 0x4d))
+				rest.addEvent(m.data, m.numBytes, m.samplePosition);
+		_midi.swapWith(rest);
+		return true;
+	}
+
+	void Processor::handleBindRequest()
+	{
+		const auto load = m_bindLoadId.load();
+		const auto save = m_bindSaveId.load();
+		stateLog("bind load=" + juce::String(load) + " save=" + juce::String(save));
+		if (save == 0)
+			return;
+
+		juce::MemoryBlock data;
+		const auto src = instanceFile(load);
+		if (load != 0 && src.existsAsFile() && src.loadFileAsData(data) && data.getSize() > 0)
+		{
+			m_instanceId = 0;   // don't write while loading
+			stateLog("loading " + src.getFullPathName() + " " + juce::String(static_cast<int>(data.getSize())));
+			if (!m_audioRunning)
+				deferState(data.getData(), data.getSize(), "bind");
+			else
+				setState(data.getData(), data.getSize());
+		}
+		else
+		{
+			stateLog("no saved state for " + juce::String(load));
+		}
+
+		m_instanceId = save;
+		instanceFile(save).getParentDirectory().createDirectory();
+		juce::MemoryBlock now;
+		getStateInformation(now);   // writes <save>.state (the loaded / pending state)
+	}
+
 	void Processor::getStateInformation (juce::MemoryBlock& destData)
 	{
 	    // You should use this method to store your parameters in the memory block.
 	    // You could do that either as raw data, or use the XML or ValueTree classes
 	    // as intermediaries to make it easy to save and load complex data.
+		if (!m_pendingState.empty())
+		{
+			// OsTIrus_mod: restored state not applied yet — save that, not the default
+			destData.append(m_pendingState.data(), m_pendingState.size());
+			stateLog("getStateInformation -> pending " + juce::String(m_pendingState.size()) + stateFingerprint(m_pendingState.data(), m_pendingState.size()));
+			if (m_instanceId != 0)
+				instanceFile(m_instanceId).replaceWithData(m_pendingState.data(), m_pendingState.size());
+			return;
+		}
 		PluginStream ss;
 		ss.write(g_saveMagic);
 		ss.write(g_saveVersion);
@@ -834,12 +994,22 @@ namespace pluginLib
 		ss.toVector(buf);
 
 		destData.append(buf.data(), buf.size());
+		stateLog("getStateInformation " + juce::String(buf.size()) + stateFingerprint(buf.data(), buf.size()));
+		if (m_instanceId != 0)   // OsTIrus_mod: keep this instance's state file current
+			instanceFile(m_instanceId).replaceWithData(buf.data(), buf.size());
 	}
 
 	void Processor::setStateInformation (const void* _data, const int _sizeInBytes)
 	{
 		// You should use this method to restore your parameters from this memory block,
 	    // whose contents will have been created by the getStateInformation() call.
+		stateLog("setStateInformation " + juce::String(_sizeInBytes) + " prepared=" + juce::String(m_prepared ? 1 : 0)
+			+ " audio=" + juce::String(m_audioRunning ? 1 : 0) + stateFingerprint(_data, static_cast<size_t>(std::max(0, _sizeInBytes))));
+		if (!m_audioRunning && _sizeInBytes > 0)
+		{
+			deferState(_data, static_cast<size_t>(_sizeInBytes), "setStateInformation");
+			return;
+		}
 		setState(_data, _sizeInBytes);
 	}
 
@@ -852,6 +1022,13 @@ namespace pluginLib
 
 	void Processor::setCurrentProgramStateInformation(const void* data, int sizeInBytes)
 	{
+		stateLog("setCurrentProgramStateInformation " + juce::String(sizeInBytes) + " prepared=" + juce::String(m_prepared ? 1 : 0)
+			+ " audio=" + juce::String(m_audioRunning ? 1 : 0));
+		if (!m_audioRunning && sizeInBytes > 0)
+		{
+			deferState(data, static_cast<size_t>(sizeInBytes), "setCurrentProgramStateInformation");
+			return;
+		}
 		setState(data, sizeInBytes);
 	}
 		
@@ -877,6 +1054,9 @@ namespace pluginLib
 
 	void Processor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 	{
+		if (!m_audioRunning.load(std::memory_order_relaxed))
+			m_audioRunning.store(true, std::memory_order_relaxed);   // OsTIrus_mod
+		filterBindSysex(midiMessages);   // OsTIrus_mod
 	    juce::ScopedNoDenormals noDenormals;
 	    const auto totalNumInputChannels  = getTotalNumInputChannels();
 	    const auto totalNumOutputChannels = getTotalNumOutputChannels();
@@ -1232,6 +1412,8 @@ namespace pluginLib
 
 	void Processor::processBlockBypassed(juce::AudioBuffer<float>& _buffer, juce::MidiBuffer& _midiMessages)
 	{
+		if (!m_audioRunning.load(std::memory_order_relaxed))
+			m_audioRunning.store(true, std::memory_order_relaxed);   // OsTIrus_mod
 		if(getProperties().isSynth || getTotalNumInputChannels() <= 0)
 		{
 			_buffer.clear(0, _buffer.getNumSamples());

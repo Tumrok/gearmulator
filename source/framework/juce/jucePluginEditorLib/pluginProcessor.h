@@ -32,6 +32,7 @@ namespace jucePluginEditorLib
 		juce::PropertiesFile& getConfig() { return m_config; }
 
 		bool setLatencyBlocks(uint32_t _blocks) override;
+		void onHostSelectPart(uint8_t _part) override;   // OsTIrus_mod
 
 		bool hasEditor() const override;
 		juce::AudioProcessorEditor* createEditor() override;
