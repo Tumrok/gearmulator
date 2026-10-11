@@ -24,6 +24,8 @@ namespace jucePluginEditorLib
 
 		int getControlParameterIndex(Component&) override;
 
+		void parentHierarchyChanged() override;
+
 	private:
 		void setGuiScale(float _percent);
 		void setUiRoot(juce::Component* _component);
@@ -41,6 +43,7 @@ namespace jucePluginEditorLib
 
 		void timerCallback() override;
 		void fixParentWindowSize() const;
+		void keepOnTop(int _retries);
 
 		PluginEditorState& m_state;
 		juce::PropertiesFile& m_config;
