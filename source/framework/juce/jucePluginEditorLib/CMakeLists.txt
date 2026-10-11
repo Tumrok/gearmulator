@@ -36,6 +36,7 @@ set(SOURCES
 	settingsSkin.cpp settingsSkin.h
 	settingsVoiceExpansion.cpp settingsVoiceExpansion.h
 	settingsPlugin.cpp settingsPlugin.h
+	settingsPushKnobs.cpp settingsPushKnobs.h
 	skin.h
 )
 

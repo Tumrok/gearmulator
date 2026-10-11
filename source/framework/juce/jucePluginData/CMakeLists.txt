@@ -43,6 +43,8 @@ set(RMLSOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/tus_settings_midilearn.rcss
 	${CMAKE_CURRENT_SOURCE_DIR}/tus_settings_skin.rml
 	${CMAKE_CURRENT_SOURCE_DIR}/tus_settings_skin.rcss
+	${CMAKE_CURRENT_SOURCE_DIR}/tus_settings_pushknobs.rml
+	${CMAKE_CURRENT_SOURCE_DIR}/tus_settings_pushknobs.rcss
 )
 
 list(APPEND DATASOURCES ${RMLSOURCES})

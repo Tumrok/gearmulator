@@ -13,6 +13,7 @@
 #include "settingsMidiLearn.h"
 #include "settingsSkin.h"
 #include "settingsVoiceExpansion.h"
+#include "settingsPushKnobs.h"
 
 #include "skin.h"
 
@@ -492,7 +493,8 @@ namespace jucePluginEditorLib
 				for (int k = 0; k < pluginLib::HostMacros::KnobCount; ++k)
 				{
 					const auto current = macros->getTarget(shownLayer, k);
-					const auto label = "Knob " + std::to_string(k + 1) + (current.empty() ? std::string() : "  (" + current + ")");
+					const auto shown = macros->getTargetDisplayName(shownLayer, k);
+					const auto label = "Knob " + std::to_string(k + 1) + (shown.empty() ? std::string() : "  (" + shown + ")");
 					m.addEntry(label, current == paramName, [macros, paramName, _layer, k]
 					{
 						macros->setTarget(_layer, k, paramName);
@@ -512,7 +514,7 @@ namespace jucePluginEditorLib
 				if (macros->getTarget(layer, k).empty())
 					continue;
 				anyAssigned = true;
-				removeMenu.addEntry("Knob " + std::to_string(k + 1) + "  (" + macros->getTarget(layer, k) + ")", [macros, layer, k]
+				removeMenu.addEntry("Knob " + std::to_string(k + 1) + "  (" + macros->getTargetDisplayName(layer, k) + ")", [macros, layer, k]
 				{
 					macros->setTarget(layer, k, {});
 				});
@@ -542,7 +544,7 @@ namespace jucePluginEditorLib
 			pushMenu.addSubMenu("Rename Knob (Layer " + std::to_string(layer) + ")", std::move(renameMenu));
 
 			pushMenu.addSeparator();
-			pushMenu.addEntry("Send Knobs + Layer to Live 'Configure'", [macros] { macros->announceToHost(); });
+			pushMenu.addEntry("Send Knobs to Live 'Configure'", [macros] { macros->announceToHost(); });
 
 			menu.addSubMenu("Push Knobs", std::move(pushMenu));
 			menu.addSeparator();
@@ -882,6 +884,8 @@ namespace jucePluginEditorLib
 		_plugins.push_back(std::make_unique<SettingsMidiLearn>(getProcessor()));
 		_plugins.push_back(std::make_unique<SettingsDspAudio>(getProcessor()));
 		_plugins.push_back(std::make_unique<SettingsDspBridge>(getProcessor()));
+		if (getProcessor().getHostMacros())
+			_plugins.push_back(std::make_unique<SettingsPushKnobs>(getProcessor()));
 	}
 
 	juce::Component* Editor::createRmlUiComponent(const std::string& _rmlFile)
