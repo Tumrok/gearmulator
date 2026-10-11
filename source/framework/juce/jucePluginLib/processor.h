@@ -13,6 +13,7 @@
 #include "bypassBuffer.h"
 #include "controller.h"
 #include "hostAudioWorkgroup.h"
+#include "hostMacros.h"
 #include "midiLearnTranslator.h"
 #include "midiports.h"
 #include "programChangeRouter.h"
@@ -97,6 +98,9 @@ namespace pluginLib
 		virtual void getRemoteDeviceParams(synthLib::DeviceCreateParams& _params) const;
 		virtual bridgeClient::RemoteDevice* createRemoteDevice();
 		synthLib::Device* createDevice(DeviceType _type);
+
+		// OsTIrus_mod_v2: null unless built with GEARMULATOR_HOST_MACROS
+		HostMacros* getHostMacros() const { return m_hostMacros.get(); }
 
 		bool hasController() const
 		{
@@ -306,6 +310,7 @@ namespace pluginLib
 		virtual Controller *createController() = 0;
 
 	    std::unique_ptr<Controller> m_controller{};
+		std::unique_ptr<HostMacros> m_hostMacros;
 
 		synthLib::DeviceError getDeviceError() const { return m_deviceError; }
 

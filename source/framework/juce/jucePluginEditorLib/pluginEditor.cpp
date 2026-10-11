@@ -479,6 +479,75 @@ namespace jucePluginEditorLib
 
 		juceRmlUi::Menu menu;
 
+		// OsTIrus_mod_v2: assign this parameter to a host knob (shown on Push)
+		if (auto* macros = m_processor.getHostMacros())
+		{
+			const auto paramName = param->getDescription().name;
+			const auto layer = static_cast<int>(part) + 1;
+
+			auto knobMenu = [macros, paramName](const int _layer)
+			{
+				juceRmlUi::Menu m;
+				const auto shownLayer = _layer ? _layer : 1;
+				for (int k = 0; k < pluginLib::HostMacros::KnobCount; ++k)
+				{
+					const auto current = macros->getTarget(shownLayer, k);
+					const auto label = "Knob " + std::to_string(k + 1) + (current.empty() ? std::string() : "  (" + current + ")");
+					m.addEntry(label, current == paramName, [macros, paramName, _layer, k]
+					{
+						macros->setTarget(_layer, k, paramName);
+					});
+				}
+				return m;
+			};
+
+			juceRmlUi::Menu pushMenu;
+			pushMenu.addSubMenu("Assign to Knob (Layer " + std::to_string(layer) + ")", knobMenu(layer));
+			pushMenu.addSubMenu("Assign to Knob (all Layers)", knobMenu(0));
+
+			juceRmlUi::Menu removeMenu;
+			bool anyAssigned = false;
+			for (int k = 0; k < pluginLib::HostMacros::KnobCount; ++k)
+			{
+				if (macros->getTarget(layer, k).empty())
+					continue;
+				anyAssigned = true;
+				removeMenu.addEntry("Knob " + std::to_string(k + 1) + "  (" + macros->getTarget(layer, k) + ")", [macros, layer, k]
+				{
+					macros->setTarget(layer, k, {});
+				});
+			}
+			if (anyAssigned)
+				pushMenu.addSubMenu("Clear Knob (Layer " + std::to_string(layer) + ")", std::move(removeMenu));
+
+			juceRmlUi::Menu renameMenu;
+			for (int k = 0; k < pluginLib::HostMacros::KnobCount; ++k)
+			{
+				const auto custom = macros->getCustomName(layer, k);
+				renameMenu.addEntry("Knob " + std::to_string(k + 1) + (custom.empty() ? std::string() : "  \"" + custom + "\""), [macros, layer, k, custom]
+				{
+					auto* w = new juce::AlertWindow("Knob " + juce::String(k + 1) + ", Layer " + juce::String(layer),
+						"Name shown on Push. Empty = the parameter's name.", juce::MessageBoxIconType::NoIcon);
+					w->addTextEditor("name", custom);
+					w->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+					w->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+					w->setAlwaysOnTop(true);
+					w->enterModalState(true, juce::ModalCallbackFunction::create([w, macros, layer, k](const int _result)
+					{
+						if (_result == 1)
+							macros->setCustomName(layer, k, w->getTextEditorContents("name").toStdString());
+					}), true);
+				});
+			}
+			pushMenu.addSubMenu("Rename Knob (Layer " + std::to_string(layer) + ")", std::move(renameMenu));
+
+			pushMenu.addSeparator();
+			pushMenu.addEntry("Send Knobs + Layer to Live 'Configure'", [macros] { macros->announceToHost(); });
+
+			menu.addSubMenu("Push Knobs", std::move(pushMenu));
+			menu.addSeparator();
+		}
+
 		// Lock / Unlock
 
 		if(hasRegions)

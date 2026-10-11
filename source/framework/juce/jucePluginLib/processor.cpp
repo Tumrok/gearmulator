@@ -189,6 +189,11 @@ namespace pluginLib
 	{
 	    if (m_controller == nullptr)
 		{
+#if GEARMULATOR_HOST_MACROS
+			// the knobs + Layer come first in the host's parameter list
+			if (!m_hostMacros)
+				m_hostMacros = std::make_unique<HostMacros>(*this);
+#endif
 	        m_controller.reset(createController());
 			
 			// Initialize MIDI Learn translator with controller
@@ -482,6 +487,9 @@ namespace pluginLib
 		if (m_midiLearnTranslator)
 			m_midiLearnTranslator->saveChunkData(s);
 
+		if (m_hostMacros)
+			m_hostMacros->saveChunkData(s);
+
 		if (m_programName != g_defaultProgramName)
 		{
 			baseLib::ChunkWriter cw(s, "PROG", 1);
@@ -558,6 +566,9 @@ namespace pluginLib
 		
 		if (m_midiLearnTranslator)
 			m_midiLearnTranslator->loadChunkData(_cr);
+
+		if (m_hostMacros)
+			m_hostMacros->loadChunkData(_cr);
 	}
 
 	void Processor::readGain(baseLib::BinaryStream& _s)
@@ -1112,6 +1123,9 @@ namespace pluginLib
 			}
 
 			ev.offset = std::max(0, metadata.samplePosition);
+
+			if (m_hostMacros)
+				m_hostMacros->remapMidi(ev);	// OsTIrus_mod_v2: to the Layer's part
 
 			addMidiEvent(ev);
 		}

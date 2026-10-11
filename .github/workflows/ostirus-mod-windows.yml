@@ -1,7 +1,9 @@
 name: OsTIrus_mod Windows VST3
 
-# Builds only the OsTIrus_mod VST3 (side-by-side variant of OsTIrus, see
-# source/osTIrusJucePlugin/CMakeLists.txt) for Windows x64.
+# Builds only the OsTIrus_mod VST3 variants (side-by-side builds of OsTIrus, see
+# source/osTIrusJucePlugin/CMakeLists.txt) for Windows x64:
+#   OsTIrus_mod     - state fixes for Max vst~
+#   OsTIrus_mod_v2  - + 16 host knobs and Layer (source/jucePluginLib/hostMacros.h)
 on:
   push:
     branches: [ ostirus-mod ]
@@ -10,6 +12,18 @@ on:
 jobs:
   build:
     runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - product: OsTIrus_mod
+            synth: Ttim
+            fx: Ttin
+            macros: OFF
+          - product: OsTIrus_mod_v2
+            synth: Ttiv
+            fx: Ttiw
+            macros: ON
     steps:
     - uses: actions/checkout@v4
       with:
@@ -33,9 +47,10 @@ jobs:
         -Dgearmulator_SYNTH_VAVRA=OFF
         -Dgearmulator_SYNTH_XENIA=OFF
         -Dgearmulator_SYNTH_NODALRED2X=OFF
-        -DOSTIRUS_PRODUCT_NAME=OsTIrus_mod
-        -DOSTIRUS_CODE_SYNTH=Ttim
-        -DOSTIRUS_CODE_FX=Ttin
+        -DOSTIRUS_PRODUCT_NAME=${{ matrix.product }}
+        -DOSTIRUS_CODE_SYNTH=${{ matrix.synth }}
+        -DOSTIRUS_CODE_FX=${{ matrix.fx }}
+        -DGEARMULATOR_HOST_MACROS=${{ matrix.macros }}
 
     - name: Build
       run: cmake --build build --config Release --target osTIrusJucePlugin_VST3 --parallel 4
@@ -43,6 +58,6 @@ jobs:
     - name: Upload VST3
       uses: actions/upload-artifact@v4
       with:
-        name: OsTIrus_mod-VST3-Windows-x64
-        path: bin/plugins/Release/VST3/OsTIrus_mod.vst3
+        name: ${{ matrix.product }}-VST3-Windows-x64
+        path: bin/plugins/Release/VST3/${{ matrix.product }}.vst3
         if-no-files-found: error
