@@ -1,6 +1,7 @@
 #include "pluginProcessor.h"
 
 #include "pluginEditorState.h"
+#include "pluginEditor.h"
 #include "pluginEditorWindow.h"
 
 #include "baseLib/binarystream.h"
@@ -80,6 +81,21 @@ namespace jucePluginEditorLib
 	{
 		stopMcpServer();
 		assert(!m_editorState && "call destroyEditorState in destructor of derived class");
+	}
+
+	void Processor::onHostSelectPart(const uint8_t _part)
+	{
+		// OsTIrus_mod: with an open editor go through it, so part buttons and patch
+		// manager follow too; without one just set the controller's current part
+		if (auto* state = getEditorState())
+		{
+			if (auto* editor = state->getEditor())
+			{
+				editor->setCurrentPart(_part);
+				return;
+			}
+		}
+		pluginLib::Processor::onHostSelectPart(_part);
 	}
 
 	bool Processor::setLatencyBlocks(const uint32_t _blocks)

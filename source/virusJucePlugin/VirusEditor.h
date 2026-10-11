@@ -55,6 +55,7 @@ namespace genericVirusUI
 		void create() override;
 
 		void setPart(size_t _part);
+		void setCurrentPart(uint8_t _part) override;   // OsTIrus_mod: also refresh part UI
 
 		virus::Controller& getController() const;
 		virus::VirusProcessor& getProcessor() const { return m_processor; }

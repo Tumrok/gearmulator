@@ -30,4 +30,10 @@ buildSkinHeader()
 
 juce_add_binary_data(osTIrusJucePlugin_BinaryData SOURCES ${ASSETS} ${ASSETS_SKINS})
 
-createJucePluginWithFX(osTIrusJucePlugin "OsTIrus" "Ttip" "Ttif" osTIrusJucePlugin_BinaryData virusJucePlugin)
+# Product name / plugin codes can be overridden to build a side-by-side variant,
+# e.g. -DOSTIRUS_PRODUCT_NAME=OsTIrus_mod -DOSTIRUS_CODE_SYNTH=Ttim -DOSTIRUS_CODE_FX=Ttin
+set(OSTIRUS_PRODUCT_NAME "OsTIrus" CACHE STRING "OsTIrus product name")
+set(OSTIRUS_CODE_SYNTH "Ttip" CACHE STRING "OsTIrus synth plugin 4CC")
+set(OSTIRUS_CODE_FX "Ttif" CACHE STRING "OsTIrus FX plugin 4CC")
+
+createJucePluginWithFX(osTIrusJucePlugin "${OSTIRUS_PRODUCT_NAME}" "${OSTIRUS_CODE_SYNTH}" "${OSTIRUS_CODE_FX}" osTIrusJucePlugin_BinaryData virusJucePlugin)

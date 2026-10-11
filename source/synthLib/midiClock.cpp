@@ -39,6 +39,15 @@ namespace synthLib
 			LOGMC("Stop at ppqPos=" << _ppqPos);
 			stop();
 		}
+		else if(m_isPlaying && _isPlaying && _ppqPos < m_lastPpqPos - 0.5)
+		{
+			// Host looped back or seeked backward — re-sync the clock
+			LOGMC("Loop/seek detected: ppqPos " << m_lastPpqPos << " -> " << _ppqPos);
+			stop();
+			start(_ppqPos);
+		}
+
+		m_lastPpqPos = _ppqPos;
 
 		for(uint32_t i=0; i<static_cast<uint32_t>(_sampleCount); ++i)
 		{
@@ -66,10 +75,18 @@ namespace synthLib
 	void MidiClock::start(const float _ppqPos)
 	{
 		const double ppqPos = _ppqPos;
-		const auto quarterPos = (ppqPos - std::floor(ppqPos + 1.0));
 
-		m_clockTickPos = quarterPos * (ClockTicksPerQuarter);
+		// Compute how far through the current clock tick period we already are,
+		// so the first tick fires at the correct phase rather than always at the
+		// start of the next full tick period.
+		// m_clockTickPos must be in [-1, 0): the loop fires a tick each time it
+		// crosses 0, so starting at (fracTick - 1.0) fires the first tick after
+		// exactly (1 - fracTick) of a tick period.
+		const double absoluteTicks = ppqPos * ClockTicksPerQuarter;
+		const double fracTick = absoluteTicks - std::floor(absoluteTicks);
+		m_clockTickPos = fracTick - 1.0;
 
+		m_lastPpqPos = ppqPos;
 		m_isPlaying = true;
 
 		LOGMC("Start at ppqPos=" << ppqPos << ", clock tick offset " << m_clockTickPos);

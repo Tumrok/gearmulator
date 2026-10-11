@@ -533,6 +533,11 @@ namespace genericVirusUI
 	void VirusEditor::setPart(const size_t _part)
 	{
 		setCurrentPart(static_cast<uint8_t>(_part));
+	}
+
+	void VirusEditor::setCurrentPart(const uint8_t _part)
+	{
+		Editor::setCurrentPart(_part);
 		onCurrentPartChanged();
 	}
 }
