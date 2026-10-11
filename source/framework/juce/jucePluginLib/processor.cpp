@@ -1011,8 +1011,8 @@ namespace pluginLib
 
 			ev.offset = std::max(0, metadata.samplePosition);
 
-			if (m_hostMacros)
-				m_hostMacros->remapMidi(ev);	// OsTIrus_mod_v2: to the Layer's part
+			if (m_hostMacros && !m_hostMacros->remapMidi(ev))	// OsTIrus_mod_v2: to the Layer's part
+				continue;	// Layer CC
 
 			addMidiEvent(ev);
 		}

@@ -1,0 +1,37 @@
+<template name="tus_settings_pushknobs">
+<head>
+	<link type="text/rcss" href="tus_settings_pushknobs.rcss"/>
+</head>
+<body>
+	<div class="settings-page">
+		<h1>Push Knobs</h1>
+		<h3 style="padding-top: 1em">Layer</h3>
+		<p class="pushknobs-hint">From a clip: Envelopes, MIDI Ctrl, CC 3, value 1-16 = layer.</p>
+		<div class="pushknobs-layers">
+			<button id="btLayer" class="button pushknobs-layer">1</button>
+		</div>
+		<settingsspacer1/>
+		<table class="settings-table">
+			<tr class="settings-tr settings-tr-headline pushknobs-tr pushknobs-tr-headline">
+				<td>Knob</td>
+				<td>Parameter</td>
+				<td>Name on Push</td>
+				<td>Value</td>
+				<td></td>
+			</tr>
+			<tr id="row" class="settings-tr pushknobs-tr">
+				<td id="lbKnob">1</td>
+				<td id="lbParam">-</td>
+				<td><input id="edName" class="pushknobs-name" type="text" maxlength="24" value=""/></td>
+				<td id="lbValue">-</td>
+				<td><button id="btClear" class="button pushknobs-clear">Clear</button></td>
+			</tr>
+		</table>
+		<settingsspacer1/>
+		<p class="pushknobs-hint">Assign: right click on a parameter in the synth panel, then Push Knobs. Name: type to rename, empty = the parameter's name.</p>
+		<settingsspacer1/>
+		<button id="btConfigure" class="button" style="display: inline-block;">Send Knobs to Live 'Configure'</button>
+		<settingsspacer1/>
+	</div>
+</body>
+</template>

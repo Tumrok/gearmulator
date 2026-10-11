@@ -30,6 +30,7 @@ set(SOURCES
 	settingsMidiMatrix.cpp settingsMidiMatrix.h
 	settingsSkin.cpp settingsSkin.h
 	settingsPlugin.cpp settingsPlugin.h
+	settingsPushKnobs.cpp settingsPushKnobs.h
 	skin.h
 )
 
