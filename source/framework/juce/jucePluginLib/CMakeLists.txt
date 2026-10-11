@@ -14,6 +14,7 @@ set(SOURCES
 	controllermap.cpp controllermap.h
 	dummydevice.cpp dummydevice.h
 	filetype.cpp filetype.h
+	hostMacros.cpp hostMacros.h
 	midiLearnManager.cpp midiLearnManager.h
 	midiLearnMapping.cpp midiLearnMapping.h
 	midiLearnPreset.cpp midiLearnPreset.h
@@ -58,6 +59,12 @@ set(SOURCES_PATCHDB
 add_library(jucePluginLib STATIC)
 
 target_sources(jucePluginLib PRIVATE ${SOURCES} ${SOURCES_PATCHDB})
+
+# OsTIrus_mod_v2: 16 host knobs + Layer (see hostMacros.h)
+option(GEARMULATOR_HOST_MACROS "Expose host macro knobs + Layer" OFF)
+if(GEARMULATOR_HOST_MACROS)
+	target_compile_definitions(jucePluginLib PUBLIC GEARMULATOR_HOST_MACROS=1)
+endif()
 source_group("source" FILES ${SOURCES})
 source_group("source\\patchdb" FILES ${SOURCES_PATCHDB})
 
