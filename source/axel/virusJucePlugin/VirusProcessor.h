@@ -59,6 +59,10 @@ namespace virus
 
 	    pluginLib::Controller* createController() override;
 
+		// OsTIrus_mod_v5: user bank presets for the Push User Bank / Preset knobs
+		bool parseHostPresets(const std::vector<uint8_t>& _fileData, std::vector<pluginLib::HostPreset>& _results) override;
+		bool activateHostPreset(const pluginLib::HostPreset& _preset, uint8_t _part) override;
+
 		void zynthianExportLv2Presets() const;
 		void exportLv2Presets(const virusLib::ROMFile& _rom, const std::string& _rootPath) const;
 

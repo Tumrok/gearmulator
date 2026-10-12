@@ -489,6 +489,7 @@ namespace jucePluginEditorLib
 			auto knobMenu = [macros, paramName](const int _layer)
 			{
 				juceRmlUi::Menu m;
+				m.setItemsPerColumn(16);	// 32 knobs: two columns
 				const auto shownLayer = _layer ? _layer : 1;
 				for (int k = 0; k < pluginLib::HostMacros::KnobCount; ++k)
 				{
@@ -512,6 +513,7 @@ namespace jucePluginEditorLib
 			pushMenu.addSubMenu("Assign to Knob (all Layers)", knobMenu(0));
 
 			juceRmlUi::Menu removeMenu;
+			removeMenu.setItemsPerColumn(16);
 			bool anyAssigned = false;
 			for (int k = 0; k < pluginLib::HostMacros::KnobCount; ++k)
 			{
@@ -527,6 +529,7 @@ namespace jucePluginEditorLib
 				pushMenu.addSubMenu("Clear Knob (" + layerLabel + ")", std::move(removeMenu));
 
 			juceRmlUi::Menu renameMenu;
+			renameMenu.setItemsPerColumn(16);
 			for (int k = 0; k < pluginLib::HostMacros::KnobCount; ++k)
 			{
 				const auto custom = macros->getCustomName(layer, k);
@@ -548,7 +551,7 @@ namespace jucePluginEditorLib
 			pushMenu.addSubMenu("Rename Knob (" + layerLabel + ")", std::move(renameMenu));
 
 			pushMenu.addSeparator();
-			pushMenu.addEntry("Send Knobs + Edit Layer to Live 'Configure'", [macros] { macros->announceToHost(); });
+			pushMenu.addEntry("Send Knobs + Bank 5 to Live 'Configure'", [macros] { macros->announceToHost(); });
 
 			menu.addSubMenu("Push Knobs", std::move(pushMenu));
 			menu.addSeparator();

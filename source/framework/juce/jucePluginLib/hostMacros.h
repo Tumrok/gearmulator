@@ -4,6 +4,7 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -24,6 +25,14 @@ namespace pluginLib
 	class Parameter;
 	class HostMacros;
 
+	// a preset of a user bank of the patch manager, for HostMacros' User Bank / Preset knobs
+	struct HostPreset
+	{
+		std::string name;
+		std::vector<uint8_t> sysex;	// as stored, may hold several messages (multi + singles)
+		std::string hash;			// patch manager hash (hex), to find a rename in the bank's json
+	};
+
 	// OsTIrus_mod_v2: 16 host knobs + "Layer", the first parameters the plugin shows the host.
 	//
 	// Layer (1..16) picks the part: incoming host MIDI is re-channelled to it (a note-off
@@ -36,7 +45,7 @@ namespace pluginLib
 	class HostMacros : juce::Timer
 	{
 	public:
-		static constexpr int KnobCount = 16;
+		static constexpr int KnobCount = 32;
 		static constexpr int LayerCount = 16;
 
 		class Knob final : public juce::AudioProcessorParameterWithID
@@ -106,6 +115,29 @@ namespace pluginLib
 			std::atomic<float> m_value{0.0f};
 		};
 
+		// User Bank / Preset (Push bank 5, after Edit Layer): a user bank of the patch manager
+		// and one of its presets, loaded into the Edit Layer's part. Continuous 0..1 over
+		// the list; active only with "User preset bank" switched on.
+		class ListParam final : public juce::AudioProcessorParameterWithID
+		{
+		public:
+			ListParam(HostMacros& _owner, const juce::String& _id, const juce::String& _name, bool _isPreset);
+
+			float getValue() const override { return m_value.load(); }
+			void setValue(float _newValue) override;
+			float getDefaultValue() const override { return 0.0f; }
+			juce::String getText(float _normalisedValue, int) const override;
+			float getValueForText(const juce::String&) const override { return getValue(); }
+
+			void setFromOwner(float _value);	// message thread: report to the host, no write back
+			static int toIndex(float _value, size_t _count);
+
+		private:
+			HostMacros& m_owner;
+			const bool m_isPreset;
+			std::atomic<float> m_value{0.0f};
+		};
+
 		// MIDI CC that selects the layer from a clip (MIDI Ctrl envelope): value 1..16 = layer.
 		// Free in the Virus CC map; consumed, it never reaches the synth.
 		static constexpr uint8_t LayerCC = 3;
@@ -139,6 +171,11 @@ namespace pluginLib
 		std::string getTargetDisplayName(int _layer, int _knob) const;
 		uint32_t getRevision() const { return m_revision.load(); }	// changes with layout / names / layer
 
+		// user preset banks (patch manager "User" banks, read from its folder)
+		bool getPresetMode() const { return m_presetMode.load(); }
+		void setPresetMode(bool _on);
+		void saveExtraChunks(baseLib::BinaryStream& _s) const;
+
 	private:
 		void timerCallback() override;
 		void onKnobFromHost(int _knob, float _value);
@@ -147,11 +184,17 @@ namespace pluginLib
 		void resolveTargets();
 		void syncKnobsFromTargets(bool _force);
 		void namesChanged();
+		void scanBanks();
+		void loadBankPresets(int _bank);
+		void updatePresetSelection();
+		juce::String getListText(bool _isPreset, float _value) const;
 
 		Processor& m_processor;
 		std::array<Knob*, KnobCount> m_knobs{};
 		LayerParam* m_layerParam = nullptr;
 		EditLayerParam* m_editLayerParam = nullptr;
+		ListParam* m_bankParam = nullptr;
+		ListParam* m_presetParam = nullptr;
 
 		mutable std::mutex m_mutex;	// guards the layout and names below
 		std::array<std::array<std::string, KnobCount>, LayerCount> m_targets;
@@ -172,5 +215,15 @@ namespace pluginLib
 		int m_announceStep = -1;
 		int m_settleTicks = 0;	// countdown to the name / editor update after a Layer change
 		std::atomic<uint32_t> m_revision{0};
+
+		// presets (lists guarded by m_mutex)
+		std::atomic<bool> m_presetMode{false};
+		std::vector<std::string> m_bankNames;
+		int m_loadedBank = -2;				// bank whose presets are in m_presets, -2 = scan again
+		std::vector<HostPreset> m_presets;
+		std::atomic<bool> m_presetTouched{false};	// Preset knob moved by the host
+		std::atomic<bool> m_bankTouched{false};		// User Bank knob moved by the host
+		int m_presetSettleTicks = 0;
+		int m_startTicks = 0;				// no preset loads while the host restores the plugin
 	};
 }

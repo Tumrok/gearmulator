@@ -95,13 +95,17 @@
 }
 
 /* the knob number needs little room, names need a lot */
-.pk-col-knob { width: 3em; }
-.pk-col-param { width: 16em; }
-.pk-col-name { width: 16em; }
-.pk-col-value { width: 7em; }
-.pk-col-clear { width: 6em; }
+.pk-col-knob { width: 2.5em; }
+.pk-col-param { width: 13em; }
+.pk-col-name { width: 13em; }
+.pk-col-value { width: 6em; }
+.pk-col-clear { width: 5em; }
 
 .pushknobs-hint {
 	color: #fffa;
 	font-style: italic;
+}
+
+.pushknobs-presetmode {
+	padding-top: 0.8em;
 }

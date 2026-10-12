@@ -22,6 +22,9 @@ namespace pluginLib
 				BinaryData::namedResourceList,
 				BinaryData::getNamedResource
 			}
+#ifdef GEARMULATOR_DATA_NAME
+			, GEARMULATOR_DATA_NAME
+#endif
 		};
 	}
 }

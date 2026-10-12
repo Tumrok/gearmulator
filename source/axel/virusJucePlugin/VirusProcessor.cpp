@@ -9,6 +9,11 @@
 
 #include "synthLib/deviceException.h"
 #include "synthLib/lv2PresetExport.h"
+#include "synthLib/midiToSysex.h"
+
+#include "virusLib/microcontrollerTypes.h"
+
+#include "juce_cryptography/hashing/juce_MD5.h"
 
 namespace virus
 {
@@ -172,5 +177,125 @@ namespace virus
 
 			synthLib::Lv2PresetExport::exportPresets(path, getProperties().lv2Uri, bank);
 		}
+	}
+
+	// ---- OsTIrus_mod_v5: user bank presets ------------------------------------------------
+
+	namespace
+	{
+		// as the patch manager hashes a dump (PatchManager::initializePatch): without the header,
+		// bank/program, checksum and f7, so a rename stored for it in the bank's json matches
+		std::string presetHash(const synthLib::SysexBufferList& _msgs)
+		{
+			std::vector<uint8_t> temp;
+			constexpr size_t frontOffset = 9;
+			constexpr size_t backOffset = 2;
+			for (const auto& m : _msgs)
+				if (m.size() > frontOffset + backOffset)
+					temp.insert(temp.end(), m.begin() + frontOffset, m.end() - backOffset);
+			const juce::MD5 md5(temp.data(), temp.size());
+			return juce::String::toHexString(md5.getChecksumDataArray(), 16, 0).toLowerCase().toStdString();
+		}
+
+		std::string multiName(const synthLib::SysexBuffer& _multi)
+		{
+			constexpr size_t offset = 9 + virusLib::MultiDump::MD_NAME_CHAR_0;
+			if (_multi.size() < offset + 10)
+				return "Multi";
+			std::string name(reinterpret_cast<const char*>(_multi.data()) + offset, 10);
+			while (!name.empty() && name.back() == ' ')
+				name.pop_back();
+			return name.empty() ? "Multi" : name;
+		}
+
+		synthLib::SysexBuffer toEditBuffer(synthLib::SysexBuffer _multi)
+		{
+			if (_multi.size() > 8)
+			{
+				_multi[7] = virusLib::toMidiByte(virusLib::BankNumber::EditBuffer);
+				_multi[8] = 0;
+			}
+			return _multi;
+		}
+	}
+
+	bool VirusProcessor::parseHostPresets(const std::vector<uint8_t>& _fileData, std::vector<pluginLib::HostPreset>& _results)
+	{
+		synthLib::SysexBufferList msgs;
+		synthLib::MidiToSysex::splitMultipleSysex(msgs, synthLib::SysexBuffer(_fileData.begin(), _fileData.end()));
+
+		const auto& c = static_cast<const Controller&>(getController());
+
+		for (size_t i = 0; i < msgs.size(); ++i)
+		{
+			const auto& msg = msgs[i];
+			if (msg.size() < 10)
+				continue;
+
+			const auto cmd = msg[6];
+
+			if (cmd == virusLib::SysexMessageType::DUMP_MULTI)
+			{
+				// an arrangement is stored as the multi followed by its 16 singles
+				size_t singles = 0;
+				while (singles < 16 && i + 1 + singles < msgs.size() && msgs[i + 1 + singles].size() > 6 && msgs[i + 1 + singles][6] == virusLib::SysexMessageType::DUMP_SINGLE)
+					++singles;
+
+				synthLib::SysexBufferList parts(msgs.begin() + static_cast<std::ptrdiff_t>(i), msgs.begin() + static_cast<std::ptrdiff_t>(i + 1 + (singles == 16 ? 16 : 0)));
+
+				pluginLib::HostPreset preset;
+				preset.name = multiName(msg);
+				preset.hash = presetHash(parts);
+				for (const auto& m : parts)
+					preset.sysex.insert(preset.sysex.end(), m.begin(), m.end());
+				_results.push_back(std::move(preset));
+
+				if (singles == 16)
+					i += 16;
+				continue;
+			}
+
+			if (cmd != virusLib::SysexMessageType::DUMP_SINGLE || msg.size() < 267)
+				continue;
+
+			pluginLib::MidiPacket::Data data;
+			pluginLib::MidiPacket::AnyPartParamValues values;
+			if (!c.parseSingle(data, values, msg))
+				continue;
+
+			pluginLib::HostPreset preset;
+			preset.name = c.getSinglePresetName(values);
+			preset.hash = presetHash({msg});
+			preset.sysex.assign(msg.begin(), msg.end());
+			_results.push_back(std::move(preset));
+		}
+		return !_results.empty();
+	}
+
+	bool VirusProcessor::activateHostPreset(const pluginLib::HostPreset& _preset, const uint8_t _part)
+	{
+		synthLib::SysexBufferList msgs;
+		synthLib::MidiToSysex::splitMultipleSysex(msgs, synthLib::SysexBuffer(_preset.sysex.begin(), _preset.sysex.end()));
+		if (msgs.empty() || msgs.front().size() < 10)
+			return false;
+
+		auto& c = static_cast<Controller&>(getController());
+
+		if (msgs.front()[6] == virusLib::SysexMessageType::DUMP_SINGLE)
+			return c.activatePatch(msgs.front(), _part);
+
+		if (msgs.front()[6] != virusLib::SysexMessageType::DUMP_MULTI)
+			return false;
+
+		// a multi / arrangement replaces all parts, as in the patch manager
+		const auto multi = toEditBuffer(msgs.front());
+		c.sendSysEx(pluginLib::SysEx(multi.begin(), multi.end()));
+		if (msgs.size() == 17)
+		{
+			for (uint8_t i = 0; i < 16; ++i)
+				c.activatePatch(msgs[i + 1], i);
+		}
+		c.requestArrangement();
+		return true;
 	}
 }
