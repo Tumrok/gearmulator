@@ -389,7 +389,10 @@ namespace pluginLib
 			m_midiLearnTranslator->saveChunkData(s);
 
 		if (m_hostMacros)
+		{
 			m_hostMacros->saveChunkData(s);
+			m_hostMacros->saveLayerNames(s);
+		}
 
 		if (m_programName != g_defaultProgramName)
 		{

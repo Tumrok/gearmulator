@@ -499,7 +499,11 @@ namespace jucePluginEditorLib
 			};
 
 			juceRmlUi::Menu pushMenu;
-			pushMenu.addSubMenu("Assign to Knob (Layer " + std::to_string(layer) + ")", knobMenu(layer));
+			// "Layer 1", or "1. Lead" once the layer has a name
+			const auto layerName = macros->getLayerName(layer);
+			const auto layerLabel = layerName.empty() ? "Layer " + std::to_string(layer) : std::to_string(layer) + ". " + layerName;
+
+			pushMenu.addSubMenu("Assign to Knob (" + layerLabel + ")", knobMenu(layer));
 			pushMenu.addSubMenu("Assign to Knob (all Layers)", knobMenu(0));
 
 			juceRmlUi::Menu removeMenu;
@@ -515,15 +519,15 @@ namespace jucePluginEditorLib
 				});
 			}
 			if (anyAssigned)
-				pushMenu.addSubMenu("Clear Knob (Layer " + std::to_string(layer) + ")", std::move(removeMenu));
+				pushMenu.addSubMenu("Clear Knob (" + layerLabel + ")", std::move(removeMenu));
 
 			juceRmlUi::Menu renameMenu;
 			for (int k = 0; k < pluginLib::HostMacros::KnobCount; ++k)
 			{
 				const auto custom = macros->getCustomName(layer, k);
-				renameMenu.addEntry("Knob " + std::to_string(k + 1) + (custom.empty() ? std::string() : "  \"" + custom + "\""), [macros, layer, k, custom]
+				renameMenu.addEntry("Knob " + std::to_string(k + 1) + (custom.empty() ? std::string() : "  \"" + custom + "\""), [macros, layer, k, custom, layerLabel]
 				{
-					auto* w = new juce::AlertWindow("Knob " + juce::String(k + 1) + ", Layer " + juce::String(layer),
+					auto* w = new juce::AlertWindow("Knob " + juce::String(k + 1) + ", " + juce::String(layerLabel),
 						"Name shown on Push. Empty = the parameter's name.", juce::MessageBoxIconType::NoIcon);
 					w->addTextEditor("name", custom);
 					w->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
@@ -536,10 +540,10 @@ namespace jucePluginEditorLib
 					}), true);
 				});
 			}
-			pushMenu.addSubMenu("Rename Knob (Layer " + std::to_string(layer) + ")", std::move(renameMenu));
+			pushMenu.addSubMenu("Rename Knob (" + layerLabel + ")", std::move(renameMenu));
 
 			pushMenu.addSeparator();
-			pushMenu.addEntry("Send Knobs to Live 'Configure'", [macros] { macros->announceToHost(); });
+			pushMenu.addEntry("Send Knobs + Edit Layer to Live 'Configure'", [macros] { macros->announceToHost(); });
 
 			menu.addSubMenu("Push Knobs", std::move(pushMenu));
 			menu.addSeparator();

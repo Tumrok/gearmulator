@@ -202,6 +202,33 @@ namespace pluginLib
 		m_owner.m_layer.store(toLayer(_newValue));
 	}
 
+	// ---- Edit Layer -------------------------------------------------------------------
+
+	HostMacros::EditLayerParam::EditLayerParam(HostMacros& _owner)
+		: AudioProcessorParameterWithID(juce::ParameterID("hmEditLayer", 1), "Edit Layer")
+		, m_owner(_owner)
+	{
+	}
+
+	void HostMacros::EditLayerParam::setValue(const float _newValue)
+	{
+		m_value.store(_newValue);
+		if (!t_pushing)
+			m_owner.m_editLayer.store(LayerParam::toLayer(_newValue));
+	}
+
+	juce::String HostMacros::EditLayerParam::getText(const float _normalisedValue, int) const
+	{
+		return m_owner.getLayerListText(LayerParam::toLayer(_normalisedValue));
+	}
+
+	void HostMacros::EditLayerParam::setFromOwner(const int _layer)
+	{
+		t_pushing = true;
+		setValueNotifyingHost(LayerParam::toValue(_layer));
+		t_pushing = false;
+	}
+
 	// ---- HostMacros -------------------------------------------------------------------
 
 	HostMacros::HostMacros(Processor& _processor) : m_processor(_processor)
@@ -213,6 +240,10 @@ namespace pluginLib
 			m_knobNames[static_cast<size_t>(i)] = "Knob " + juce::String(i + 1);
 			_processor.addParameter(k);	// owned by the processor
 		}
+
+		// bank 3 (after Knob 1-16 in Live's "Configure"): Edit Layer
+		m_editLayerParam = new EditLayerParam(*this);
+		_processor.addParameter(m_editLayerParam);
 
 		m_layerParam = new LayerParam(*this);
 		_processor.addParameter(m_layerParam);
@@ -281,8 +312,23 @@ namespace pluginLib
 		}
 	}
 
+	void HostMacros::saveLayerNames(baseLib::BinaryStream& _s) const
+	{
+		baseLib::ChunkWriter cw(_s, "HMLN", 1);
+		std::lock_guard lock(m_mutex);
+		for (const auto& n : m_layerNames)
+			_s.write(n);
+	}
+
 	void HostMacros::loadChunkData(baseLib::ChunkReader& _cr)
 	{
+		_cr.add("HMLN", 1, [this](baseLib::BinaryStream& _s, uint32_t)
+		{
+			std::lock_guard lock(m_mutex);
+			for (auto& n : m_layerNames)
+				n = _s.readString();
+		});
+
 		_cr.add("HMAC", 1, [this](baseLib::BinaryStream& _s, uint32_t)
 		{
 			const auto layer = _s.read<uint32_t>();
@@ -301,6 +347,7 @@ namespace pluginLib
 			if (layer >= 1 && layer <= LayerCount)
 			{
 				m_layer.store(static_cast<int>(layer));
+				m_editLayer.store(static_cast<int>(layer));
 				m_layerParam->setSilently(static_cast<int>(layer));
 			}
 			m_resolveRequest = true;
@@ -310,6 +357,51 @@ namespace pluginLib
 	int HostMacros::getLayer() const
 	{
 		return m_layer.load();
+	}
+
+	int HostMacros::getEditLayer() const
+	{
+		return m_editLayer.load();
+	}
+
+	void HostMacros::setEditLayer(const int _layer)
+	{
+		if (_layer < 1 || _layer > LayerCount)
+			return;
+		m_editLayer.store(_layer);
+		m_editLayerParam->setFromOwner(_layer);
+		timerCallback();
+	}
+
+	std::string HostMacros::getLayerName(const int _layer) const
+	{
+		if (_layer < 1 || _layer > LayerCount)
+			return {};
+		std::lock_guard lock(m_mutex);
+		return m_layerNames[static_cast<size_t>(_layer - 1)];
+	}
+
+	void HostMacros::setLayerName(const int _layer, const std::string& _name)
+	{
+		if (_layer < 1 || _layer > LayerCount)
+			return;
+		{
+			std::lock_guard lock(m_mutex);
+			m_layerNames[static_cast<size_t>(_layer - 1)] = juce::String(_name).trim().toStdString();
+		}
+		m_editTextChanged = true;
+		++m_revision;
+	}
+
+	std::string HostMacros::getLayerDisplayName(const int _layer) const
+	{
+		const auto name = getLayerName(_layer);
+		return name.empty() ? "Layer " + std::to_string(_layer) : name;
+	}
+
+	juce::String HostMacros::getLayerListText(const int _layer) const
+	{
+		return juce::String(_layer) + ". " + (_layer == m_layer.load() ? "[C] " : "") + juce::String(getLayerDisplayName(_layer));
 	}
 
 	std::string HostMacros::getTarget(const int _layer, const int _knob) const
@@ -418,7 +510,22 @@ namespace pluginLib
 		if (!m_processor.hasController())
 			return;
 
-		const auto layer = m_layer.load();
+		// the knobs follow the playing layer whenever it changes
+		const auto play = m_layer.load();
+		if (play != m_lastPlayLayer)
+		{
+			m_lastPlayLayer = play;
+			m_editLayer.store(play);
+			m_editLayerParam->setFromOwner(play);	// also refreshes "[C]" in its text
+			m_editTextChanged = false;
+		}
+		else if (m_editTextChanged)
+		{
+			m_editTextChanged = false;
+			m_editLayerParam->setFromOwner(m_editLayer.load());	// host re-reads the text
+		}
+
+		const auto layer = m_editLayer.load();
 
 		if (m_resolveRequest)
 		{
@@ -445,15 +552,24 @@ namespace pluginLib
 			m_processor.onHostSelectPart(static_cast<uint8_t>(m_appliedLayer - 1));
 		}
 
-		// for Live's "Configure": touch the knobs one by one
+		// for Live's "Configure": touch the knobs one by one, then Edit Layer (= bank 3)
 		if (m_announceStep >= 0)
 		{
-			auto* knob = m_knobs[static_cast<size_t>(m_announceStep)];
-			knob->beginChangeGesture();
-			knob->setFromTarget(knob->getValue());
-			knob->endChangeGesture();
+			if (m_announceStep < KnobCount)
+			{
+				auto* knob = m_knobs[static_cast<size_t>(m_announceStep)];
+				knob->beginChangeGesture();
+				knob->setFromTarget(knob->getValue());
+				knob->endChangeGesture();
+			}
+			else
+			{
+				m_editLayerParam->beginChangeGesture();
+				m_editLayerParam->setFromOwner(m_editLayer.load());
+				m_editLayerParam->endChangeGesture();
+			}
 
-			if (++m_announceStep >= KnobCount)
+			if (++m_announceStep > KnobCount)
 				m_announceStep = -1;
 		}
 	}

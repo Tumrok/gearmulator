@@ -1,15 +1,28 @@
+/* ---- layer buttons ---- */
+
+.pushknobs-section {
+	padding-top: 1em;
+}
+
 .pushknobs-layers {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 0.3em;
+	padding-top: 0.4em;
 }
 
-.pushknobs-layer {
-	width: 2.4em;
-	padding: 0.4em 0;
+/* fixed size and border in every state: switching layers never moves anything */
+.button.pushknobs-layer {
+	box-sizing: border-box;
+	width: 2.6em;
+	height: 2.2em;
+	padding: 0;
+	line-height: 2em;
+	border-width: 0.1em;
 }
 
-.pushknobs-layer:checked, .pushknobs-layer:checked:hover, .button.pushknobs-layer:checked {
+.button.pushknobs-layer:checked,
+.button.pushknobs-layer:checked:hover {
 	background-color: rgb(40,140,190);
 	color: #fff;
 }
@@ -22,13 +35,40 @@
 	background-color: rgb(25,95,130);
 }
 
+/* the layer shown below while another one plays: accent border, same width */
+.button.pushknobs-layer:editing {
+	border-color: rgb(80,180,230);
+	color: rgb(120,200,240);
+}
+
+/* ---- layer name: caption above the field ---- */
+
+.pushknobs-layername {
+	display: block;
+	padding-top: 0.8em;
+}
+
+.pushknobs-caption {
+	display: block;
+	color: #fffa;
+	padding-bottom: 0.3em;
+}
+
+.pushknobs-layername-edit {
+	display: block;
+	box-sizing: border-box;
+	width: 18em;
+}
+
+/* ---- knob table ---- */
+
 .pushknobs-tr-headline {
 	font-style: italic;
 	background-color: #0003;
 }
 
 .pushknobs-tr {
-	height: 2.2em;
+	height: 2.4em;
 	vertical-align: middle;
 }
 
@@ -43,22 +83,25 @@
 }
 
 .pushknobs-name {
-	width: 100%;
 	box-sizing: border-box;
+	width: 100%;
 }
 
-.pushknobs-clear {
-	padding: 0.2em 0.6em;
+.button.pushknobs-clear {
+	box-sizing: border-box;
+	height: 1.9em;
+	padding: 0 0.8em;
+	line-height: 1.7em;
 }
 
-.pushknobs-hint {
-	color: #fffa;
-	font-style: italic;
-}
-
-/* column widths: the knob number needs little room, names need a lot */
+/* the knob number needs little room, names need a lot */
 .pk-col-knob { width: 3em; }
 .pk-col-param { width: 16em; }
 .pk-col-name { width: 16em; }
 .pk-col-value { width: 7em; }
 .pk-col-clear { width: 6em; }
+
+.pushknobs-hint {
+	color: #fffa;
+	font-style: italic;
+}

@@ -5,10 +5,14 @@
 <body>
 	<div class="settings-page">
 		<h1>Push Knobs</h1>
-		<h3 style="padding-top: 1em">Layer</h3>
-		<p class="pushknobs-hint">From a clip: Envelopes, MIDI Ctrl, CC 3, value 1-16 = layer.</p>
+		<h3 class="pushknobs-section">Layer</h3>
+		<p class="pushknobs-hint">From a clip: Envelopes, MIDI Ctrl, CC 3, value 1-16 = layer. Filled = playing, outlined = shown below.</p>
 		<div class="pushknobs-layers">
 			<button id="btLayer" class="button pushknobs-layer">1</button>
+		</div>
+		<div class="pushknobs-layername">
+			<label id="lbLayerName" class="pushknobs-caption">Layer 1 name</label>
+			<input id="edLayerName" class="pushknobs-layername-edit" type="text" maxlength="24" value=""/>
 		</div>
 		<settingsspacer1/>
 		<table class="settings-table">
@@ -30,7 +34,7 @@
 		<settingsspacer1/>
 		<p class="pushknobs-hint">Assign: right click on a parameter in the synth panel, then Push Knobs. Name: type to rename, empty = the parameter's name.</p>
 		<settingsspacer1/>
-		<button id="btConfigure" class="button" style="display: inline-block;">Send Knobs to Live 'Configure'</button>
+		<button id="btConfigure" class="button" style="display: inline-block;">Send Knobs + Edit Layer to Live 'Configure'</button>
 		<settingsspacer1/>
 	</div>
 </body>
