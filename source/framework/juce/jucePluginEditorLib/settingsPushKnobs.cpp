@@ -38,6 +38,20 @@ namespace jucePluginEditorLib
 			});
 		}
 
+		// name of the shown layer (empty = "Layer N")
+		m_layerNameLabel = juceRmlUi::helper::findChild(_root, "lbLayerName");
+		m_layerName = juceRmlUi::helper::findChildT<Rml::ElementFormControlInput>(_root, "edLayerName");
+		juceRmlUi::EventListener::Add(m_layerName, Rml::EventId::Change, [this](Rml::Event&)
+		{
+			auto text = m_layerName->GetValue();
+			if (text == "Layer " + std::to_string(m_shownLayer))
+				text.clear();
+			if (text == m_macros.getLayerName(m_shownLayer))
+				return;
+			m_macros.setLayerName(m_shownLayer, text);
+			m_seenRevision = m_macros.getRevision();	// don't overwrite the field while typing
+		});
+
 		// 16 knob rows from the first one
 		auto* firstRow = juceRmlUi::helper::findChild(_root, "row");
 		for (int k = 0; k < Count; ++k)
@@ -55,7 +69,7 @@ namespace jucePluginEditorLib
 
 			juceRmlUi::EventListener::Add(r.name, Rml::EventId::Change, [this, k](Rml::Event&)
 			{
-				const auto layer = m_macros.getLayer();
+				const auto layer = m_shownLayer;
 				auto text = m_rows[static_cast<size_t>(k)].name->GetValue();
 
 				// the shown auto name (= parameter name) is not a custom name
@@ -68,7 +82,7 @@ namespace jucePluginEditorLib
 
 			juceRmlUi::EventListener::AddClick(r.clear, [this, k]
 			{
-				const auto layer = m_macros.getLayer();
+				const auto layer = m_shownLayer;
 				m_macros.setTarget(layer, k, {});
 				m_macros.setCustomName(layer, k, {});
 				timerCallback();
@@ -84,7 +98,7 @@ namespace jucePluginEditorLib
 
 	void SettingsPushKnobs::timerCallback()
 	{
-		if (m_macros.getRevision() != m_seenRevision || m_macros.getLayer() != m_shownLayer)
+		if (m_macros.getRevision() != m_seenRevision || m_macros.getEditLayer() != m_shownLayer || m_macros.getLayer() != m_shownPlayLayer)
 			refreshLayout();
 		refreshValues();
 	}
@@ -92,10 +106,18 @@ namespace jucePluginEditorLib
 	void SettingsPushKnobs::refreshLayout()
 	{
 		m_seenRevision = m_macros.getRevision();
-		m_shownLayer = m_macros.getLayer();
+		m_shownLayer = m_macros.getEditLayer();
+		m_shownPlayLayer = m_macros.getLayer();
 
 		for (int l = 0; l < Count; ++l)
-			m_layerButtons[static_cast<size_t>(l)]->SetPseudoClass("checked", l + 1 == m_shownLayer);
+		{
+			auto* bt = m_layerButtons[static_cast<size_t>(l)];
+			bt->SetPseudoClass("checked", l + 1 == m_shownPlayLayer);
+			bt->SetPseudoClass("editing", l + 1 == m_shownLayer && m_shownLayer != m_shownPlayLayer);
+		}
+
+		m_layerNameLabel->SetInnerRML("Layer " + std::to_string(m_shownLayer) + " name");
+		m_layerName->SetValue(m_macros.getLayerDisplayName(m_shownLayer));
 
 		for (int k = 0; k < Count; ++k)
 		{
@@ -104,7 +126,9 @@ namespace jucePluginEditorLib
 
 			r.param->SetInnerRML(Rml::StringUtilities::EncodeRml(target.empty() ? std::string("-") : target));
 			r.row->SetPseudoClass("empty", target.empty());
-			juceRmlUi::helper::setVisible(r.clear, !target.empty() || !m_macros.getCustomName(m_shownLayer, k).empty());
+			// hidden, not removed: rows keep their layout
+			const bool canClear = !target.empty() || !m_macros.getCustomName(m_shownLayer, k).empty();
+			r.clear->SetProperty(Rml::PropertyId::Visibility, Rml::Property(canClear ? Rml::Style::Visibility::Visible : Rml::Style::Visibility::Hidden));
 
 			const auto custom = m_macros.getCustomName(m_shownLayer, k);
 			r.name->SetValue(custom.empty() && target.empty() ? std::string() : m_macros.getKnobName(k).toStdString());

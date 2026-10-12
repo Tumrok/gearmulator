@@ -83,6 +83,29 @@ namespace pluginLib
 			std::atomic<float> m_value{0.0f};
 		};
 
+		// Which layer the knobs show and edit (Push bank 3). Follows the playing layer
+		// whenever that changes; turning it previews another layer's knobs while only the
+		// playing layer gets the notes. Value text: "2. [C] Lead" ([C] = playing layer).
+		class EditLayerParam final : public juce::AudioProcessorParameterWithID
+		{
+		public:
+			explicit EditLayerParam(HostMacros& _owner);
+
+			float getValue() const override { return m_value.load(); }
+			void setValue(float _newValue) override;
+			float getDefaultValue() const override { return 0.0f; }
+			int getNumSteps() const override { return LayerCount; }
+			bool isDiscrete() const override { return true; }
+			juce::String getText(float _normalisedValue, int) const override;
+			float getValueForText(const juce::String& _text) const override { return LayerParam::toValue(_text.getIntValue()); }
+
+			void setFromOwner(int _layer);	// message thread: report to the host, no write back
+
+		private:
+			HostMacros& m_owner;
+			std::atomic<float> m_value{0.0f};
+		};
+
 		// MIDI CC that selects the layer from a clip (MIDI Ctrl envelope): value 1..16 = layer.
 		// Free in the Virus CC map; consumed, it never reaches the synth.
 		static constexpr uint8_t LayerCC = 3;
@@ -94,16 +117,23 @@ namespace pluginLib
 		bool remapMidi(synthLib::SMidiEvent& _ev);
 
 		void saveChunkData(baseLib::BinaryStream& _s) const;
+		void saveLayerNames(baseLib::BinaryStream& _s) const;
 		void loadChunkData(baseLib::ChunkReader& _cr);
 
 		// editor
-		int getLayer() const;	// 1..16
+		int getLayer() const;	// 1..16, the playing layer
+		int getEditLayer() const;	// 1..16, the layer the knobs show
+		void setEditLayer(int _layer);
+		std::string getLayerName(int _layer) const;	// custom name, empty = none
+		void setLayerName(int _layer, const std::string& _name);
+		std::string getLayerDisplayName(int _layer) const;	// custom name or "Layer N"
+		juce::String getLayerListText(int _layer) const;	// "2. [C] Lead"
 		std::string getTarget(int _layer, int _knob) const;	// parameter name, empty = none
 		void setTarget(int _layer, int _knob, const std::string& _paramName);	// _layer 0 = all layers
 		std::string getCustomName(int _layer, int _knob) const;
 		void setCustomName(int _layer, int _knob, const std::string& _name);
 		juce::String getKnobName(int _knob) const;	// as the host shows it (current layer)
-		void announceToHost();	// touch every knob, in order (for Live's plugin "Configure")
+		void announceToHost();	// touch every knob, then Edit Layer, in order (for Live's plugin "Configure")
 		void setLayer(int _layer);	// UI: not reported to the host (would switch off Layer automation)
 		juce::String getValueText(int _knob) const;	// current layer
 		std::string getTargetDisplayName(int _layer, int _knob) const;
@@ -121,17 +151,22 @@ namespace pluginLib
 		Processor& m_processor;
 		std::array<Knob*, KnobCount> m_knobs{};
 		LayerParam* m_layerParam = nullptr;
+		EditLayerParam* m_editLayerParam = nullptr;
 
 		mutable std::mutex m_mutex;	// guards the layout and names below
 		std::array<std::array<std::string, KnobCount>, LayerCount> m_targets;
 		std::array<std::array<std::string, KnobCount>, LayerCount> m_customNames;
+		std::array<std::string, LayerCount> m_layerNames;
 		std::array<juce::String, KnobCount> m_knobNames;	// current layer, as shown to the host
 		std::array<juce::String, KnobCount> m_reportedNames;	// names the host was last told about
 
 		std::array<std::atomic<Parameter*>, KnobCount> m_active{};	// targets of the current layer
 		int m_appliedLayer = 0;	// message thread
 		std::atomic<bool> m_resolveRequest{true};
-		std::atomic<int> m_layer{1};	// current layer: last of Layer parameter / Layer CC / UI
+		std::atomic<int> m_layer{1};	// playing layer: last of Layer parameter / Layer CC / UI
+		std::atomic<int> m_editLayer{1};	// layer the knobs show
+		int m_lastPlayLayer = 0;	// message thread
+		bool m_editTextChanged = false;	// layer names changed: report the Edit Layer text again
 
 		std::array<uint8_t, 128> m_noteChannel{};	// audio thread: channel of each held note, 0xff = none
 		int m_announceStep = -1;

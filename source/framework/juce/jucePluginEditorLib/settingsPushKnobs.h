@@ -42,6 +42,9 @@ namespace jucePluginEditorLib
 		pluginLib::HostMacros& m_macros;
 
 		std::array<Rml::Element*, Count> m_layerButtons{};
+		Rml::Element* m_layerNameLabel = nullptr;
+		Rml::ElementFormControlInput* m_layerName = nullptr;
+		int m_shownPlayLayer = 0;
 
 		struct Row
 		{
