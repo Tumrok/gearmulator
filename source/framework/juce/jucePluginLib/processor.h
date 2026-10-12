@@ -67,6 +67,8 @@ namespace pluginLib
 			const std::string plugin4CC;
 			const std::string lv2Uri;
 			BinaryDataRef binaryData;
+			// OsTIrus_mod_v5: name of the data folder / config / skins, shared with another product (empty = name)
+			const std::string dataName = {};
 		};
 
 		Processor(const BusesProperties& _busesProperties, Properties _properties);
@@ -88,6 +90,11 @@ namespace pluginLib
 		virtual void getRemoteDeviceParams(synthLib::DeviceCreateParams& _params) const;
 		virtual bridgeClient::RemoteDevice* createRemoteDevice();
 		synthLib::Device* createDevice(DeviceType _type);
+
+		// OsTIrus_mod_v5: user bank presets for HostMacros (synth specific: split a bank file into
+		// presets, load one into a part)
+		virtual bool parseHostPresets(const std::vector<uint8_t>& /*_fileData*/, std::vector<HostPreset>& /*_results*/) { return false; }
+		virtual bool activateHostPreset(const HostPreset& /*_preset*/, uint8_t /*_part*/) { return false; }
 
 		// OsTIrus_mod_v2: null unless built with GEARMULATOR_HOST_MACROS
 		HostMacros* getHostMacros() const { return m_hostMacros.get(); }

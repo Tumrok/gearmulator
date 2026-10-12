@@ -117,6 +117,14 @@ namespace genericVirusUI
 	void Parts::selectPart(const size_t _part) const
 	{
 		m_editor.setPart(_part);
+
+		// OsTIrus_mod_v5: a click on a part in Multi also makes it the playing layer. Only this
+		// click does: Edit Layer selects the part in the editor without going through here.
+		if (auto* macros = m_editor.getProcessor().getHostMacros())
+		{
+			if (m_editor.getController().isMultiMode())
+				macros->setLayer(static_cast<int>(_part) + 1);
+		}
 	}
 
 	void Parts::selectPartMidiChannel(const size_t _part) const

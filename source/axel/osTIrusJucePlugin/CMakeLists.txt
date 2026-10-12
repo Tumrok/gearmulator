@@ -37,3 +37,10 @@ set(OSTIRUS_CODE_SYNTH "Ttip" CACHE STRING "OsTIrus synth plugin 4CC")
 set(OSTIRUS_CODE_FX "Ttif" CACHE STRING "OsTIrus FX plugin 4CC")
 
 createJucePluginWithFX(osTIrusJucePlugin "${OSTIRUS_PRODUCT_NAME}" "${OSTIRUS_CODE_SYNTH}" "${OSTIRUS_CODE_FX}" osTIrusJucePlugin_BinaryData virusJucePlugin)
+
+# Data folder / config / skins / patch manager name, e.g. -DOSTIRUS_DATA_NAME=OsTIrus to share
+# them with the original OsTIrus (empty = the product name)
+set(OSTIRUS_DATA_NAME "" CACHE STRING "OsTIrus data folder name")
+if(OSTIRUS_DATA_NAME AND TARGET osTIrusJucePlugin)
+	target_compile_definitions(osTIrusJucePlugin PRIVATE GEARMULATOR_DATA_NAME="${OSTIRUS_DATA_NAME}")
+endif()

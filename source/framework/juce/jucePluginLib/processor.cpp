@@ -392,6 +392,7 @@ namespace pluginLib
 		{
 			m_hostMacros->saveChunkData(s);
 			m_hostMacros->saveLayerNames(s);
+			m_hostMacros->saveExtraChunks(s);
 		}
 
 		if (m_programName != g_defaultProgramName)
@@ -591,7 +592,7 @@ namespace pluginLib
 	std::string Processor::getProductName(const bool _useFxName) const
 	{
 		const auto& p = getProperties();
-		auto name = p.name;
+		auto name = p.dataName.empty() ? p.name : p.dataName;
 		if(!_useFxName && !p.isSynth && name.substr(name.size()-2, 2) == "FX")
 			return name.substr(0, name.size() - 2);
 		return name;
@@ -753,12 +754,9 @@ namespace pluginLib
 		return " hash=" + juce::String::toHexString(static_cast<int>(h)) + " head=" + juce::String::toHexString(b, static_cast<int>(std::min<size_t>(_size, 24)), 0);
 	}
 
-	void Processor::stateLog(const juce::String& _msg) const
+	void Processor::stateLog(const juce::String&) const
 	{
-		const juce::File file(juce::String(getDataFolder()) + "state_debug.log");
-		file.appendText(juce::Time::getCurrentTime().formatted("%H:%M:%S.")
-			+ juce::String(juce::Time::getMillisecondCounter() % 1000).paddedLeft('0', 3)
-			+ " [" + juce::String::toHexString(reinterpret_cast<juce::pointer_sized_int>(this)) + "] " + _msg + "\n");
+		// state_debug.log is no longer written (was a diagnostic for the vst~ state restore)
 	}
 
 	void Processor::deferState(const void* _data, const size_t _size, const char* _origin)

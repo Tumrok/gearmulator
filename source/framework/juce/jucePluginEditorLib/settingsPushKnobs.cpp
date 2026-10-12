@@ -6,6 +6,7 @@
 
 #include "juceRmlUi/rmlEventListener.h"
 #include "juceRmlUi/rmlHelper.h"
+#include "juceRmlUi/rmlElemButton.h"
 
 #include "RmlUi/Core/Element.h"
 #include "RmlUi/Core/Elements/ElementFormControlInput.h"
@@ -52,9 +53,9 @@ namespace jucePluginEditorLib
 			m_seenRevision = m_macros.getRevision();	// don't overwrite the field while typing
 		});
 
-		// 16 knob rows from the first one
+		// knob rows from the first one
 		auto* firstRow = juceRmlUi::helper::findChild(_root, "row");
-		for (int k = 0; k < Count; ++k)
+		for (int k = 0; k < KnobRows; ++k)
 		{
 			auto* row = k == 0 ? firstRow : firstRow->GetParentNode()->AppendChild(firstRow->Clone());
 
@@ -89,6 +90,17 @@ namespace jucePluginEditorLib
 			});
 		}
 
+		// "User preset bank": User Bank / Preset knobs on (stored with the plugin state)
+		if (auto* modeRoot = juceRmlUi::helper::findChild(_root, "btPresetMode", false))
+		{
+			m_presetModeButton = juceRmlUi::helper::findChild(modeRoot, "button");
+			juceRmlUi::EventListener::AddClick(modeRoot, [this]
+			{
+				m_macros.setPresetMode(!m_macros.getPresetMode());
+				timerCallback();
+			});
+		}
+
 		if (auto* btConfigure = juceRmlUi::helper::findChild(_root, "btConfigure", false))
 			juceRmlUi::EventListener::AddClick(btConfigure, [this] { m_macros.announceToHost(); });
 
@@ -116,10 +128,13 @@ namespace jucePluginEditorLib
 			bt->SetPseudoClass("editing", l + 1 == m_shownLayer && m_shownLayer != m_shownPlayLayer);
 		}
 
+		if (m_presetModeButton)
+			juceRmlUi::ElemButton::setChecked(m_presetModeButton, m_macros.getPresetMode());
+
 		m_layerNameLabel->SetInnerRML("Layer " + std::to_string(m_shownLayer) + " name");
 		m_layerName->SetValue(m_macros.getLayerDisplayName(m_shownLayer));
 
-		for (int k = 0; k < Count; ++k)
+		for (int k = 0; k < KnobRows; ++k)
 		{
 			auto& r = m_rows[static_cast<size_t>(k)];
 			const auto target = m_macros.getTargetDisplayName(m_shownLayer, k);
@@ -139,7 +154,7 @@ namespace jucePluginEditorLib
 
 	void SettingsPushKnobs::refreshValues()
 	{
-		for (int k = 0; k < Count; ++k)
+		for (int k = 0; k < KnobRows; ++k)
 		{
 			const auto v = m_macros.getValueText(k).toStdString();
 			auto& shown = m_shownValues[static_cast<size_t>(k)];

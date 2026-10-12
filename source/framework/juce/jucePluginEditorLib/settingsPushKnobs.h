@@ -24,7 +24,8 @@ namespace jucePluginEditorLib
 	class SettingsPushKnobs : public SettingsPlugin, juce::Timer
 	{
 	public:
-		static constexpr int Count = 16;
+		static constexpr int Count = 16;	// layers
+		static constexpr int KnobRows = 32;
 
 		SettingsPushKnobs(Processor& _processor);
 		~SettingsPushKnobs() override;
@@ -54,8 +55,9 @@ namespace jucePluginEditorLib
 			Rml::Element* value = nullptr;
 			Rml::Element* clear = nullptr;
 		};
-		std::array<Row, Count> m_rows{};
-		std::array<std::string, Count> m_shownValues;
+		std::array<Row, KnobRows> m_rows{};
+		std::array<std::string, KnobRows> m_shownValues;
+		Rml::Element* m_presetModeButton = nullptr;
 
 		uint32_t m_seenRevision = 0xffffffff;
 		int m_shownLayer = 0;

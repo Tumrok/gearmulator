@@ -203,8 +203,10 @@ namespace pluginLib
     {
 		if (!getDescription().isPublic)
 			return;
+#if !GEARMULATOR_HOST_MACROS
 		if(!m_changeGestureCount)
 			beginChangeGesture();
+#endif
 		++m_changeGestureCount;
     }
 
@@ -220,7 +222,9 @@ namespace pluginLib
 		{
 			// Flush any pending rate-limited parameter value when gesture ends
 			sendPendingParameterChange();
+#if !GEARMULATOR_HOST_MACROS
 			endChangeGesture();
+#endif
 		}
 	}
 
@@ -312,9 +316,15 @@ namespace pluginLib
 
     void Parameter::notifyHost(const float _value)
     {
+#if GEARMULATOR_HOST_MACROS
+		// OsTIrus_mod_v5: only the host knobs talk to the host. A synth parameter reported as
+		// changed shows up in Live as an extra "last touched" knob next to them on Push.
+		juce::ignoreUnused(_value);
+#else
 		m_notifyingHost = true;
 		sendValueChangedMessageToListeners(_value);
 		m_notifyingHost = false;
+#endif
     }
 
     juce::ParameterID Parameter::genId(const Description& d, const int part, const int uniqueId)

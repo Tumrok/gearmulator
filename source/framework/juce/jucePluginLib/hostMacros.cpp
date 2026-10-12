@@ -353,6 +353,45 @@ namespace pluginLib
 		t_pushing = false;
 	}
 
+	// ---- User Bank / Preset -------------------------------------------------------------
+
+	HostMacros::ListParam::ListParam(HostMacros& _owner, const juce::String& _id, const juce::String& _name, const bool _isPreset)
+		: AudioProcessorParameterWithID(juce::ParameterID(_id, 1), _name)
+		, m_owner(_owner)
+		, m_isPreset(_isPreset)
+	{
+	}
+
+	void HostMacros::ListParam::setValue(const float _newValue)
+	{
+		m_value.store(_newValue);
+		if (t_pushing)
+			return;
+		if (m_isPreset)
+			m_owner.m_presetTouched = true;
+		else
+			m_owner.m_bankTouched = true;
+	}
+
+	juce::String HostMacros::ListParam::getText(const float _normalisedValue, int) const
+	{
+		return m_owner.getListText(m_isPreset, _normalisedValue);
+	}
+
+	void HostMacros::ListParam::setFromOwner(const float _value)
+	{
+		t_pushing = true;
+		setValueNotifyingHost(_value);
+		t_pushing = false;
+	}
+
+	int HostMacros::ListParam::toIndex(const float _value, const size_t _count)
+	{
+		if (_count == 0)
+			return -1;
+		return juce::jlimit(0, static_cast<int>(_count) - 1, static_cast<int>(std::lround(_value * static_cast<float>(_count - 1))));
+	}
+
 	// ---- HostMacros -------------------------------------------------------------------
 
 	HostMacros::HostMacros(Processor& _processor) : m_processor(_processor)
@@ -365,9 +404,15 @@ namespace pluginLib
 			_processor.addParameter(k);	// owned by the processor
 		}
 
-		// bank 3 (after Knob 1-16 in Live's "Configure"): Edit Layer
+		// bank 5 (after Knob 1-32 in Live's "Configure"): Edit Layer, User Bank, Preset
 		m_editLayerParam = new EditLayerParam(*this);
 		_processor.addParameter(m_editLayerParam);
+
+		m_bankParam = new ListParam(*this, "hmUserBank", "User Bank", false);
+		_processor.addParameter(m_bankParam);
+
+		m_presetParam = new ListParam(*this, "hmPreset", "Preset", true);
+		_processor.addParameter(m_presetParam);
 
 		m_layerParam = new LayerParam(*this);
 		_processor.addParameter(m_layerParam);
@@ -420,11 +465,12 @@ namespace pluginLib
 
 	void HostMacros::saveChunkData(baseLib::BinaryStream& _s) const
 	{
-		baseLib::ChunkWriter cw(_s, "HMAC", 1);
+		baseLib::ChunkWriter cw(_s, "HMAC", 2);
 
 		std::lock_guard lock(m_mutex);
 
 		_s.write(static_cast<uint32_t>(m_layer.load()));
+		_s.write(static_cast<uint32_t>(KnobCount));
 
 		for (int l = 0; l < LayerCount; ++l)
 		{
@@ -434,6 +480,14 @@ namespace pluginLib
 				_s.write(m_customNames[l][k]);
 			}
 		}
+	}
+
+	void HostMacros::saveExtraChunks(baseLib::BinaryStream& _s) const
+	{
+		baseLib::ChunkWriter cw(_s, "HMPS", 1);
+		_s.write(static_cast<uint8_t>(m_presetMode.load() ? 1 : 0));
+		_s.write(m_bankParam->getValue());
+		_s.write(m_presetParam->getValue());
 	}
 
 	void HostMacros::saveLayerNames(baseLib::BinaryStream& _s) const
@@ -446,6 +500,18 @@ namespace pluginLib
 
 	void HostMacros::loadChunkData(baseLib::ChunkReader& _cr)
 	{
+		_cr.add("HMPS", 1, [this](baseLib::BinaryStream& _s, uint32_t)
+		{
+			m_presetMode = _s.read<uint8_t>() != 0;
+			const auto bank = _s.read<float>();
+			const auto preset = _s.read<float>();
+			t_pushing = true;	// restoring: select, but don't load
+			m_bankParam->setValue(bank);
+			m_presetParam->setValue(preset);
+			t_pushing = false;
+			m_loadedBank = -2;	// rescan
+		});
+
 		_cr.add("HMLN", 1, [this](baseLib::BinaryStream& _s, uint32_t)
 		{
 			std::lock_guard lock(m_mutex);
@@ -453,18 +519,23 @@ namespace pluginLib
 				n = _s.readString();
 		});
 
-		_cr.add("HMAC", 1, [this](baseLib::BinaryStream& _s, uint32_t)
+		_cr.add("HMAC", 2, [this](baseLib::BinaryStream& _s, const uint32_t _version)
 		{
 			const auto layer = _s.read<uint32_t>();
+			const auto knobs = _version >= 2 ? static_cast<int>(_s.read<uint32_t>()) : 16;
 			{
 				std::lock_guard lock(m_mutex);
 
 				for (int l = 0; l < LayerCount; ++l)
 				{
-					for (int k = 0; k < KnobCount; ++k)
+					for (int k = 0; k < knobs; ++k)
 					{
-						m_targets[l][k] = _s.readString();
-						m_customNames[l][k] = _s.readString();
+						auto target = _s.readString();
+						auto name = _s.readString();
+						if (k >= KnobCount)
+							continue;
+						m_targets[l][k] = std::move(target);
+						m_customNames[l][k] = std::move(name);
 					}
 				}
 			}
@@ -680,7 +751,9 @@ namespace pluginLib
 			m_processor.onHostSelectPart(static_cast<uint8_t>(m_appliedLayer - 1));
 		}
 
-		// for Live's "Configure": touch the knobs one by one, then Edit Layer (= bank 3)
+		updatePresetSelection();
+
+		// for Live's "Configure": touch the knobs one by one, then Edit Layer, User Bank, Preset (= bank 5)
 		if (m_announceStep >= 0)
 		{
 			if (m_announceStep < KnobCount)
@@ -690,14 +763,21 @@ namespace pluginLib
 				knob->setFromTarget(knob->getValue());
 				knob->endChangeGesture();
 			}
-			else
+			else if (m_announceStep == KnobCount)
 			{
 				m_editLayerParam->beginChangeGesture();
 				m_editLayerParam->setFromOwner(m_editLayer.load());
 				m_editLayerParam->endChangeGesture();
 			}
+			else
+			{
+				auto* list = m_announceStep == KnobCount + 1 ? m_bankParam : m_presetParam;
+				list->beginChangeGesture();
+				list->setFromOwner(list->getValue());
+				list->endChangeGesture();
+			}
 
-			if (++m_announceStep > KnobCount)
+			if (++m_announceStep > KnobCount + 2)
 				m_announceStep = -1;
 		}
 	}
@@ -773,5 +853,168 @@ namespace pluginLib
 			if (_force || static_cast<int>(shown) != static_cast<int>(target))
 				knob->setFromTarget(range.convertTo0to1(target));
 		}
+	}
+
+	// ---- user preset banks -------------------------------------------------------------
+
+	void HostMacros::setPresetMode(const bool _on)
+	{
+		m_presetMode = _on;
+		m_loadedBank = -2;	// rescan
+		updatePresetSelection();
+		++m_revision;
+	}
+
+	void HostMacros::scanBanks()
+	{
+		// the patch manager's user banks ("localstorage" data sources), by name
+		const juce::File folder(m_processor.getPatchManagerDataFolder(false));
+		const auto json = juce::JSON::parse(folder.getChildFile("patchmanagerdb.json"));
+
+		std::vector<std::string> names;
+		if (const auto* sources = json["datasources"].getArray())
+		{
+			for (const auto& ds : *sources)
+			{
+				if (ds["type"].toString() == "localstorage" && ds["name"].toString().isNotEmpty())
+					names.push_back(ds["name"].toString().toStdString());
+			}
+		}
+		std::sort(names.begin(), names.end(), [](const std::string& _a, const std::string& _b)
+		{
+			return juce::String(_a).compareIgnoreCase(juce::String(_b)) < 0;
+		});
+
+		std::lock_guard lock(m_mutex);
+		m_bankNames = std::move(names);
+	}
+
+	void HostMacros::loadBankPresets(const int _bank)
+	{
+		std::string bankName;
+		{
+			std::lock_guard lock(m_mutex);
+			if (_bank >= 0 && _bank < static_cast<int>(m_bankNames.size()))
+				bankName = m_bankNames[static_cast<size_t>(_bank)];
+		}
+
+		std::vector<HostPreset> presets;
+
+		if (!bankName.empty())
+		{
+			// same file name rule as patchDB::DB::createValidFilename
+			std::string fileName;
+			for (const char c : bankName)
+				fileName += ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) ? c : '_';
+
+			const juce::File folder(m_processor.getPatchManagerDataFolder(false));
+			const auto syx = folder.getChildFile(fileName + ".syx");
+
+			juce::MemoryBlock data;
+			if (syx.loadFileAsData(data))
+			{
+				const auto* bytes = static_cast<const uint8_t*>(data.getData());
+				m_processor.parseHostPresets(std::vector<uint8_t>(bytes, bytes + data.getSize()), presets);
+			}
+
+			// names given in the patch manager: "<key ending in hash|HEX>": { "name": ... }
+			const auto json = juce::JSON::parse(folder.getChildFile(fileName + ".syx.json"));
+			if (auto* obj = json["patches"].getDynamicObject())
+			{
+				for (const auto& prop : obj->getProperties())
+				{
+					const auto key = prop.name.toString();
+					const auto name = prop.value["name"].toString();
+					if (name.isEmpty() || !key.contains("hash|"))
+						continue;
+					const auto hash = key.fromLastOccurrenceOf("hash|", false, false).toLowerCase().toStdString();
+					for (auto& preset : presets)
+						if (preset.hash == hash)
+							preset.name = name.toStdString();
+				}
+			}
+		}
+
+		std::lock_guard lock(m_mutex);
+		m_presets = std::move(presets);
+		m_loadedBank = _bank;
+	}
+
+	void HostMacros::updatePresetSelection()
+	{
+		if (m_startTicks < 60)	// ~2 s: the host restores the plugin, nothing is loaded meanwhile
+		{
+			++m_startTicks;
+			m_presetTouched = false;
+		}
+
+		if (!m_presetMode)
+		{
+			m_presetTouched = false;
+			m_bankTouched = false;
+			return;
+		}
+
+		size_t bankCount;
+		{
+			std::lock_guard lock(m_mutex);
+			bankCount = m_bankNames.size();
+		}
+
+		const bool rescan = m_loadedBank == -2;
+		if (rescan || m_bankTouched.exchange(false))
+		{
+			if (rescan || bankCount == 0)
+			{
+				scanBanks();
+				std::lock_guard lock(m_mutex);
+				bankCount = m_bankNames.size();
+			}
+			const auto bank = ListParam::toIndex(m_bankParam->getValue(), bankCount);
+			if (bank != m_loadedBank || rescan)
+			{
+				loadBankPresets(bank);
+				m_presetParam->setFromOwner(m_presetParam->getValue());	// host re-reads the preset name
+				++m_revision;
+			}
+		}
+
+		if (m_presetTouched.exchange(false))
+			m_presetSettleTicks = 6;	// ~200 ms after the knob stops
+
+		if (m_presetSettleTicks > 0 && --m_presetSettleTicks == 0)
+		{
+			HostPreset preset;
+			{
+				std::lock_guard lock(m_mutex);
+				const auto index = ListParam::toIndex(m_presetParam->getValue(), m_presets.size());
+				if (index < 0)
+					return;
+				preset = m_presets[static_cast<size_t>(index)];
+			}
+			// into the part the knobs show (Edit Layer): prepares a layer that doesn't play yet
+			m_processor.activateHostPreset(preset, static_cast<uint8_t>(m_editLayer.load() - 1));
+			m_resolveRequest = true;
+		}
+	}
+
+	juce::String HostMacros::getListText(const bool _isPreset, const float _value) const
+	{
+		if (!m_presetMode)
+			return "-";
+
+		std::lock_guard lock(m_mutex);
+		const auto count = _isPreset ? m_presets.size() : m_bankNames.size();
+		const auto index = ListParam::toIndex(_value, count);
+		if (index < 0)
+			return "-";
+
+		const auto& name = _isPreset ? m_presets[static_cast<size_t>(index)].name : m_bankNames[static_cast<size_t>(index)];
+
+		// "3: Multi-1": the number first keeps Push from reducing the name to its digits
+		auto t = std::to_string(index + 1) + ": " + name;
+		if (std::regex_search(t, std::regex(R"(\d\s*[A-Za-z]+$)")))
+			t += '.';
+		return juce::String(t);
 	}
 }

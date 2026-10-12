@@ -14,6 +14,10 @@
 			<label id="lbLayerName" class="pushknobs-caption">Layer 1 name</label>
 			<input id="edLayerName" class="pushknobs-layername-edit" type="text" maxlength="24" value=""/>
 		</div>
+		<div id="btPresetMode" class="settings-checkboxwithlabel pushknobs-presetmode">
+			<button id="button" class="settings-checkbox"/>
+			<label>User preset bank (Push bank 5: User Bank, Preset - loads into the Edit Layer)</label>
+		</div>
 		<settingsspacer1/>
 		<table class="settings-table">
 			<tr class="settings-tr settings-tr-headline pushknobs-tr pushknobs-tr-headline">
@@ -34,7 +38,7 @@
 		<settingsspacer1/>
 		<p class="pushknobs-hint">Assign: right click on a parameter in the synth panel, then Push Knobs. Name: type to rename, empty = the parameter's name.</p>
 		<settingsspacer1/>
-		<button id="btConfigure" class="button" style="display: inline-block;">Send Knobs + Edit Layer to Live 'Configure'</button>
+		<button id="btConfigure" class="button" style="display: inline-block;">Send Knobs + Bank 5 to Live 'Configure'</button>
 		<settingsspacer1/>
 	</div>
 </body>
