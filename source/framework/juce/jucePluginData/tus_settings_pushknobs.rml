@@ -13,18 +13,18 @@
 		<settingsspacer1/>
 		<table class="settings-table">
 			<tr class="settings-tr settings-tr-headline pushknobs-tr pushknobs-tr-headline">
-				<td>Knob</td>
-				<td>Parameter</td>
-				<td>Name on Push</td>
-				<td>Value</td>
-				<td></td>
+				<td class="pk-col-knob">Knob</td>
+				<td class="pk-col-param">Parameter</td>
+				<td class="pk-col-name">Name on Push</td>
+				<td class="pk-col-value">Value</td>
+				<td class="pk-col-clear"></td>
 			</tr>
 			<tr id="row" class="settings-tr pushknobs-tr">
-				<td id="lbKnob">1</td>
-				<td id="lbParam">-</td>
-				<td><input id="edName" class="pushknobs-name" type="text" maxlength="24" value=""/></td>
-				<td id="lbValue">-</td>
-				<td><button id="btClear" class="button pushknobs-clear">Clear</button></td>
+				<td id="lbKnob" class="pk-col-knob">1</td>
+				<td id="lbParam" class="pk-col-param">-</td>
+				<td class="pk-col-name"><input id="edName" class="pushknobs-name" type="text" maxlength="24" value=""/></td>
+				<td id="lbValue" class="pk-col-value">-</td>
+				<td class="pk-col-clear"><button id="btClear" class="button pushknobs-clear">Clear</button></td>
 			</tr>
 		</table>
 		<settingsspacer1/>
