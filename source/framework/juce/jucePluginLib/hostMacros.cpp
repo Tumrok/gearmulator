@@ -164,7 +164,11 @@ namespace pluginLib
 
 	juce::String HostMacros::Knob::getText(const float _normalisedValue, const int _maximumStringLength) const
 	{
-		return m_owner.getKnobText(m_index, _normalisedValue, _maximumStringLength);
+		// Live adds its own "+" to a positive value text: "+70.3%" would show as "++70.3%" on Push
+		auto t = m_owner.getKnobText(m_index, _normalisedValue, _maximumStringLength);
+		if (t.startsWithChar('+'))
+			t = t.substring(1);
+		return t;
 	}
 
 	float HostMacros::Knob::getValueForText(const juce::String& _text) const

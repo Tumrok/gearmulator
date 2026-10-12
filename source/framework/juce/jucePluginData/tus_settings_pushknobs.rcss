@@ -55,3 +55,10 @@
 	color: #fffa;
 	font-style: italic;
 }
+
+/* column widths: the knob number needs little room, names need a lot */
+.pk-col-knob { width: 3em; }
+.pk-col-param { width: 16em; }
+.pk-col-name { width: 16em; }
+.pk-col-value { width: 7em; }
+.pk-col-clear { width: 6em; }

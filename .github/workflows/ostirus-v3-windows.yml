@@ -1,12 +1,12 @@
-name: OsTIrus_mod Windows VST3
+name: OsTIrus_mod_v3 Windows VST3
 
 # Builds only the OsTIrus_mod VST3 variants (side-by-side builds of OsTIrus, see
 # source/osTIrusJucePlugin/CMakeLists.txt) for Windows x64:
-#   OsTIrus_mod     - state fixes for Max vst~
-#   OsTIrus_mod_v2  - + 16 host knobs and Layer (source/jucePluginLib/hostMacros.h)
+#   OsTIrus_mod_v3  - OsTIrus 2.2.25 + 16 host knobs and Layer
+#                     (source/framework/juce/jucePluginLib/hostMacros.h)
 on:
   push:
-    branches: [ ostirus-mod ]
+    branches: [ ostirus-v3 ]
   workflow_dispatch:
 
 jobs:
@@ -16,13 +16,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - product: OsTIrus_mod
-            synth: Ttim
-            fx: Ttin
-            macros: OFF
-          - product: OsTIrus_mod_v2
-            synth: Ttiv
-            fx: Ttiw
+          - product: OsTIrus_mod_v3
+            synth: Ttix
+            fx: Ttiy
             macros: ON
     steps:
     - uses: actions/checkout@v4
@@ -47,6 +43,8 @@ jobs:
         -Dgearmulator_SYNTH_VAVRA=OFF
         -Dgearmulator_SYNTH_XENIA=OFF
         -Dgearmulator_SYNTH_NODALRED2X=OFF
+        -Dgearmulator_SYNTH_JE8086=OFF
+        -Dgearmulator_SYNTH_88EMU=OFF
         -DOSTIRUS_PRODUCT_NAME=${{ matrix.product }}
         -DOSTIRUS_CODE_SYNTH=${{ matrix.synth }}
         -DOSTIRUS_CODE_FX=${{ matrix.fx }}
