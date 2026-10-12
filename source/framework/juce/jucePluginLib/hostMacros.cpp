@@ -1,7 +1,9 @@
 #include "hostMacros.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <regex>
 #include <sstream>
 #include <vector>
 
@@ -109,6 +111,30 @@ namespace pluginLib
 			if (t.size() <= g_maxValueText)
 				return t;
 
+			// a single word ("Exponential", "Rectifier"): cut, initials would say nothing
+			size_t letterRuns = 0;
+			for (size_t i = 0; i < t.size(); ++i)
+				if (std::isalpha(static_cast<unsigned char>(t[i])) && (i == 0 || !std::isalpha(static_cast<unsigned char>(t[i - 1]))))
+					++letterRuns;
+			if (letterRuns <= 1)
+			{
+				// keep the numbers whole, cut the word: "Pattern 2+3" -> "Patt 2+3"
+				std::string word;
+				std::vector<std::string> nums;
+				for (const auto& w : words)
+				{
+					if (word.empty() && !hasDigit(w) && std::any_of(w.begin(), w.end(), [](const char _c) { return std::isalpha(static_cast<unsigned char>(_c)) != 0; }))
+						word = w;
+					else
+						nums.push_back(w);
+				}
+				const auto numText = joinWords(nums);
+				if (numText.empty())
+					return juce::String(word).substring(0, static_cast<int>(g_maxValueText) + 1);
+				const auto room = std::max<int>(3, static_cast<int>(g_maxValueText) - static_cast<int>(numText.size()) - 1);
+				return juce::String(word.substr(0, static_cast<size_t>(room)) + " " + numText);
+			}
+
 			// letter words -> initials, words with digits stay
 			std::string initials;
 			std::vector<std::string> rest;
@@ -140,6 +166,108 @@ namespace pluginLib
 		}
 	}
 
+	namespace
+	{
+		// ---- value text for Push 2 ----------------------------------------------------
+		// Push 2 (MIDI Remote Scripts/Push2/model/repr.py) shows a value text like this:
+		// - large: all of  0-9 ° / % . : - + inf  joined; if that parses as a number it
+		//   shows only the number (so "5. Layer 5" -> "5.5"), otherwise the whole text,
+		//   and a whole text starting with '+' comes out as "++..."
+		// - small (unit): the letters at the end after a digit ("3dB" -> "dB"), shown
+		//   even next to a whole text ("0/-3.3dB" -> "0/-3.3dB dB")
+		// So: plain "<sign><number><letters unit>" where possible, otherwise a text that
+		// doesn't parse as a number and doesn't end in digit+letters.
+
+		bool parsesAsPushNumber(const std::string& _s)
+		{
+			static const std::regex large(R"(\d|\xb0|/|%|\.|:|-|\+|inf)");
+			std::string joined;
+			for (auto it = std::sregex_iterator(_s.begin(), _s.end(), large); it != std::sregex_iterator(); ++it)
+				joined += it->str();
+			if (joined.empty())
+				return false;
+			static const std::regex number(R"([+-]?(\d+\.?\d*|\.\d+))");
+			return std::regex_match(joined, number);
+		}
+
+		std::string formatNumber(const double _v)
+		{
+			// compact: whole numbers from 10 up, one decimal below
+			const auto a = std::fabs(_v);
+			if (a >= 10.0 || std::fabs(_v - std::round(_v)) < 0.05)
+				return std::to_string(static_cast<long>(std::lround(_v)));
+			char buf[32];
+			std::snprintf(buf, sizeof(buf), "%.1f", _v);
+			return buf;
+		}
+
+		std::string signedNumber(const std::string& _sign, const double _v)
+		{
+			auto n = formatNumber(_v);
+			if (n == "0" || n == "-0")
+				return "0";
+			return (_sign == "-" ? "-" : _sign) + n;
+		}
+
+		std::string pushValueText(const std::string& _raw)
+		{
+			std::string t = juce::String(_raw).trim().toStdString();
+			t = std::regex_replace(t, std::regex(R"(\s+)"), " ");
+			std::smatch m;
+
+			// note names ("C#-1", "E4") are shown as they are by Push
+			if (std::regex_match(t, std::regex(R"([CDEFGAB].?((-[1-2])|[0-8]))")))
+				return t;
+
+			// number + unit: "-3.3dB", "+16 dB", "349.5 ms", "70.3 %", "+70.3 %", "-177^"
+			if (std::regex_match(t, m, std::regex(R"(([+-]?)(\d+(?:\.\d+)?)\s*(%|\^|[A-Za-z]+)?)")))
+			{
+				const auto sign = m[1].str();
+				const auto v = std::stod(m[2].str());
+				const auto unit = m[3].str();
+				if (unit == "%" || unit == "^")
+				{
+					if (!sign.empty())
+						return signedNumber(sign, v);	// bipolar: "+70", "-98", "0" (a '%' would make Push show "++70%")
+					return formatNumber(v) + (unit == "%" ? "%" : "");
+				}
+				return signedNumber(sign, v) + unit;
+			}
+
+			// pan: "L< 6.3 %", "< 0", "6.3 % >R"
+			if (std::regex_match(t, m, std::regex(R"(L<\s*(\d+(?:\.\d+)?)\s*%)")))
+				return "L" + formatNumber(std::stod(m[1].str())) + "%";
+			if (std::regex_match(t, m, std::regex(R"((\d+(?:\.\d+)?)\s*%\s*>R)")))
+				return "R" + formatNumber(std::stod(m[1].str())) + "%";
+			if (std::regex_match(t, std::regex(R"(<\s*0\s*>?)")))
+				return "0";
+
+			// effect send past 0 dB: "0/-3.3dB" -> "0/-3"
+			if (std::regex_match(t, m, std::regex(R"((\d+)/([+-]?\d+(?:\.\d+)?)\s*[A-Za-z]*)")))
+				return m[1].str() + "/" + signedNumber("", std::stod(m[2].str()));
+
+			// any other text: shorten, then keep Push from reducing it to its digits
+			auto r = abbreviate(t).toStdString();
+			if (parsesAsPushNumber(r))
+			{
+				// "Wave 65" -> "Wave:65", "Out1 L" -> "Out:1 L"
+				const auto pos = r.find_first_of("0123456789");
+				if (pos != std::string::npos && pos > 0)
+				{
+					if (r[pos - 1] == ' ')
+						r[pos - 1] = ':';
+					else
+						r.insert(pos, ":");
+				}
+			}
+			if (!r.empty() && r.front() == '+')
+				r.erase(0, 1);
+			if (std::regex_search(r, std::regex(R"(\d\s*[A-Za-z]+$)")))
+				r += '.';	// otherwise Push repeats the trailing letters as a unit
+			return r;
+		}
+	}
+
 	// ---- Knob -------------------------------------------------------------------------
 
 	HostMacros::Knob::Knob(HostMacros& _owner, const int _index)
@@ -164,11 +292,7 @@ namespace pluginLib
 
 	juce::String HostMacros::Knob::getText(const float _normalisedValue, const int _maximumStringLength) const
 	{
-		// Live adds its own "+" to a positive value text: "+70.3%" would show as "++70.3%" on Push
-		auto t = m_owner.getKnobText(m_index, _normalisedValue, _maximumStringLength);
-		if (t.startsWithChar('+'))
-			t = t.substring(1);
-		return t;
+		return m_owner.getKnobText(m_index, _normalisedValue, _maximumStringLength);
 	}
 
 	float HostMacros::Knob::getValueForText(const juce::String& _text) const
@@ -401,7 +525,11 @@ namespace pluginLib
 
 	juce::String HostMacros::getLayerListText(const int _layer) const
 	{
-		return juce::String(_layer) + ". " + (_layer == m_layer.load() ? "[C] " : "") + juce::String(getLayerDisplayName(_layer));
+		// "5: [C] Lead" - a "5." would make Push show only the digits (see pushValueText)
+		auto t = std::to_string(_layer) + ": " + (_layer == m_layer.load() ? "[C] " : "") + getLayerDisplayName(_layer);
+		if (std::regex_search(t, std::regex(R"(\d\s*[A-Za-z]+$)")))
+			t += '.';
+		return juce::String(t);
 	}
 
 	std::string HostMacros::getTarget(const int _layer, const int _knob) const
@@ -462,7 +590,7 @@ namespace pluginLib
 
 		const auto& range = p->getNormalisableRange();
 		const auto raw = std::round(range.convertFrom0to1(juce::jlimit(0.0f, 1.0f, _value)));
-		auto text = abbreviate(p->getText(range.convertTo0to1(raw), 0));
+		auto text = juce::String(pushValueText(p->getText(range.convertTo0to1(raw), 0).toStdString()));
 		if (_maxLen > 0)
 			text = text.substring(0, _maxLen);
 		return text;
