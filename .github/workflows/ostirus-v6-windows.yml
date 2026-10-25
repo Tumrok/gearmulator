@@ -1,13 +1,13 @@
-name: OsTIrus_mod_v5 Windows VST3
+name: OsTIrus_mod_v6 Windows VST3
 
 # Builds only the OsTIrus_mod VST3 variants (side-by-side builds of OsTIrus, see
 # source/osTIrusJucePlugin/CMakeLists.txt) for Windows x64:
-#   OsTIrus_mod_v5  - OsTIrus 2.2.25 + 32 host knobs, Layer, user bank presets;
+#   OsTIrus_mod_v6  - OsTIrus 2.2.27 + 32 host knobs, Layer, user bank presets;
 #                     data folder shared with OsTIrus
 #                     (source/framework/juce/jucePluginLib/hostMacros.h)
 on:
   push:
-    branches: [ ostirus-v5 ]
+    branches: [ ostirus-v6 ]
   workflow_dispatch:
 
 jobs:
@@ -17,9 +17,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - product: OsTIrus_mod_v5
-            synth: Ttv5
-            fx: Ttw5
+          - product: OsTIrus_mod_v6
+            synth: Ttv6
+            fx: Ttw6
             macros: ON
     steps:
     - uses: actions/checkout@v4
